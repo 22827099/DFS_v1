@@ -1,7 +1,11 @@
 package errors
 
 import (
+	"encoding/json"
 	"fmt"
+	"runtime"
+	"strings"
+	"time"
 )
 
 // 错误类型定义
@@ -10,21 +14,40 @@ type Error struct {
 	Message  string         // 格式化后的消息
 	Metadata map[string]any // 附加数据
 	Cause    error          // 原始错误
+	Stack    string         // 堆栈跟踪信息
 }
 
-// 创建新错误（自动应用当前语言）
-func New(code int, args ...any) *Error {
-	lang := "zh" // 从配置中获取当前语言，默认中文
-	msgTemplate, ok := messages[code][lang]
-	if !ok {
-		msgTemplate = "未知错误"
-	}
+// 捕获当前堆栈信息
+func captureStack(skip int) string {
+	const depth = 32
+	var pcs [depth]uintptr
+	n := runtime.Callers(skip+1, pcs[:])
+	frames := runtime.CallersFrames(pcs[:n])
 
-	msg := fmt.Sprintf(msgTemplate, args...)
+	var builder strings.Builder
+	for {
+		frame, more := frames.Next()
+		if !strings.Contains(frame.File, "github.com/22827099/DFS_v1") {
+			continue // 跳过非项目代码
+		}
+		fmt.Fprintf(&builder, "%s:%d %s\n", frame.File, frame.Line, frame.Function)
+		if !more {
+			break
+		}
+	}
+	return builder.String()
+}
+
+// 创建新错误
+func New(code int, args ...any) *Error {
+	var message string
+	if len(args) > 0 {
+		message = fmt.Sprintf(args[0].(string), args[1:]...)
+	}
 	return &Error{
-		Code:     code,
-		Message:  msg,
-		Metadata: make(map[string]any),
+		Code:    code,
+		Message: message,
+		Stack:   captureStack(2),
 	}
 }
 
@@ -37,10 +60,26 @@ func Wrap(err error, code int, args ...any) *Error {
 	return e
 }
 
-// 判断错误类型
+// 错误类型检查函数
 func IsNotFound(err error) bool {
-	e, ok := err.(*Error)
-	return ok && e.Code == ErrFileNotFound
+    e, ok := err.(*Error)
+    return ok && e.Code == ErrFileNotFound
+}
+
+func IsPermissionDenied(err error) bool {
+    e, ok := err.(*Error)
+    return ok && e.Code == ErrPermission
+}
+
+func IsAlreadyExists(err error) bool {
+    e, ok := err.(*Error)
+    return ok && e.Code == ErrFileAlreadyExists
+}
+
+// 通用错误码检查函数
+func IsErrorCode(err error, code int) bool {
+    e, ok := err.(*Error)
+    return ok && e.Code == code
 }
 
 // 为错误添加附加字段
@@ -69,6 +108,54 @@ func (e *Error) HTTPStatus() int {
 	default:
 		return 500
 	}
+}
+
+// 生成JSON格式的错误表示
+func (e *Error) MarshalJSON() ([]byte, error) {
+    type jsonError struct {
+        Code     int               `json:"code"`
+        Message  string            `json:"message"`
+        Metadata map[string]any    `json:"metadata,omitempty"`
+        Cause    string            `json:"cause,omitempty"`
+    }
+    
+    je := jsonError{
+        Code:     e.Code,
+        Message:  e.Message,
+        Metadata: e.Metadata,
+    }
+    
+    if e.Cause != nil {
+        je.Cause = e.Cause.Error()
+    }
+    
+    return json.Marshal(je)
+}
+
+// 错误域
+const (
+    DomainMetadata  = "metadata"
+    DomainStorage   = "storage"
+    DomainNetwork   = "network"
+    DomainSecurity  = "security"
+)
+
+// 为错误添加域
+func (e *Error) WithDomain(domain string) *Error {
+    e.WithField("domain", domain)
+    return e
+}
+
+// 错误处理策略
+type ErrorPolicy interface {
+    // 判断错误是否可以重试
+    IsRetryable(err error) bool
+    
+    // 获取建议的重试等待时间
+    RetryDelay(err error, attempt int) time.Duration
+    
+    // 执行降级策略
+    Fallback(err error) (any, error)
 }
 
 // 实现 error 接口
