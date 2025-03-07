@@ -3,15 +3,14 @@ package config
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strconv"
 	"strings"
+	"io/ioutil"
 
 	"github.com/BurntSushi/toml"
-	tomlv2 "github.com/pelletier/go-toml/v2"
 	"gopkg.in/yaml.v3"
 )
 
@@ -146,7 +145,7 @@ func LoadConfigTOML(path string) (*SystemConfig, error) {
 		type tomlConfig SystemConfig
 		tempConfig := tomlConfig{}
 
-		if err := tomlv2.Unmarshal(data, &tempConfig); err != nil {
+		if _, err := toml.Decode(string(data), &tempConfig); err != nil {
 			return nil, fmt.Errorf("TOML解析失败: %w", err)
 		}
 

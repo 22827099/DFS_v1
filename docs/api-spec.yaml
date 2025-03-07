@@ -1,0 +1,22 @@
+openapi: 3.0.0
+info:
+  title: DFS API
+  version: 1.0.0
+paths:
+  /files/upload:
+    post:
+      summary: 上传文件
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '200':
+          description: 上传成功
+        '400':
+          description: 请求参数错误
