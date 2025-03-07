@@ -1,0 +1,22 @@
+{
+    "authentication": {
+        "method": "jwt",
+        "keyFile": "./security/jwt_key.pem",
+        "tokenExpiration": 86400
+    },
+    "authorization": {
+        "enabled": true,
+        "policyFile": "./security/acl_policy.json"
+    },
+    "tls": {
+        "enabled": true,
+        "certFile": "./security/server.crt",
+        "keyFile": "./security/server.key",
+        "minVersion": "TLS1.2"
+    },
+    "encryption": {
+        "dataAtRest": true,
+        "algorithm": "AES-256-GCM",
+        "keyRotationPeriod": 2592000
+    }
+}

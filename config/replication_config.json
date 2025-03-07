@@ -1,0 +1,23 @@
+{
+    "default": {
+        "factor": 3,
+        "strategy": "rack-aware"
+    },
+    "policies": [
+        {
+            "name": "critical",
+            "factor": 5,
+            "strategy": "datacenter-aware"
+        },
+        {
+            "name": "archival",
+            "factor": 2,
+            "strategy": "cost-optimized"
+        }
+    ],
+    "repair": {
+        "scanInterval": 3600,
+        "concurrentRepairs": 2,
+        "priorityThreshold": 2
+    }
+}

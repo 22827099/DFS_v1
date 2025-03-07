@@ -1,0 +1,20 @@
+{
+    "connection": {
+        "metaservers": ["localhost:9000"],
+        "timeout": 5000,
+        "retries": 3
+    },
+    "cache": {
+        "enabled": true,
+        "size": "256MB",
+        "ttl": 600
+    },
+    "preferences": {
+        "blockSize": "4MB",
+        "encryption": "aes256"
+    },
+    "logging": {
+        "level": "warn",
+        "path": "./logs/client.log"
+    }
+}

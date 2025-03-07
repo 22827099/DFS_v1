@@ -1,0 +1,21 @@
+{
+    "server": {
+        "host": "localhost",
+        "port": 8080,
+        "threads": 8,
+        "maxConnections": 1000
+    },
+    "storage": {
+        "path": "./data/blocks",
+        "blockSize": "64MB",
+        "maxCapacity": "1TB"
+    },
+    "transfer": {
+        "bufferSize": "8MB",
+        "compression": "lz4"
+    },
+    "logging": {
+        "level": "info",
+        "path": "./logs/dataserver.log"
+    }
+}

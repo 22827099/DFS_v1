@@ -37,7 +37,9 @@ DFS_v1/
 │   ├── client/                   # 客户端命令行工具
 │   ├── dataserver/               # 数据服务器主程序
 │   └── metaserver/               # 元数据服务器主程序
-│
+|
+├── config/                       # 各组件配置文件
+|
 ├── pkg/                          # 可被外部导入的包
 │   ├── api/                      # 公开 API 定义
 │   ├── client/                   # 客户端库
@@ -128,7 +130,7 @@ cd scripts/deploy/kubernetes
 - `dataserver_config.json`: 数据服务器配置
 - `client_config.json`: 客户端配置
 - `replication_config.json`: 复制策略配置
-- `dataserver_config.json`: 数据服务器配置
+- `security_config.json`: 安全配置
 
 ## 测试
 ```bash

@@ -1,0 +1,20 @@
+{
+    "server": {
+        "host": "localhost",
+        "port": 9000,
+        "threads": 4
+    },
+    "storage": {
+        "path": "./data/meta",
+        "maxSize": "10GB"
+    },
+    "consensus": {
+        "algorithm": "raft",
+        "electionTimeout": 1000,
+        "heartbeatInterval": 500
+    },
+    "logging": {
+        "level": "info",
+        "path": "./logs/metaserver.log"
+    }
+}
