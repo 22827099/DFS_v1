@@ -9,6 +9,7 @@ import (
 	"math/rand"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/22827099/DFS_v1/common/errors"
@@ -86,10 +87,33 @@ func WithLogger(logger Logger) ClientOption {
 
 // request 是内部请求方法，支持重试
 func (c *Client) request(ctx context.Context, method, path string, body interface{}, headers map[string]string) (*http.Response, error) {
-	// 构造URL
-	requestURL, err := url.JoinPath(c.baseURL, path)
+	// 分离路径和查询参数
+	var rawPath, rawQuery string
+	if idx := strings.IndexByte(path, '?'); idx >= 0 {
+		rawPath = path[:idx]
+		rawQuery = path[idx+1:]
+	} else {
+		rawPath = path
+	}
+
+	// 构造基础URL
+	baseURL, err := url.Parse(c.baseURL)
+	if err != nil {
+		return nil, errors.Wrap(err, errors.InvalidArgument, "无效的基础URL")
+	}
+
+	// 构造请求URL
+	requestURL, err := url.Parse(rawPath)
 	if err != nil {
 		return nil, errors.Wrap(err, errors.InvalidArgument, "无效的URL路径")
+	}
+
+	// 合并基础URL和请求路径
+	fullURL := baseURL.ResolveReference(requestURL)
+
+	// 添加查询参数
+	if rawQuery != "" {
+		fullURL.RawQuery = rawQuery
 	}
 
 	// 准备请求体
@@ -103,7 +127,7 @@ func (c *Client) request(ctx context.Context, method, path string, body interfac
 	}
 
 	// 创建请求
-	req, err := http.NewRequestWithContext(ctx, method, requestURL, bodyReader)
+	req, err := http.NewRequestWithContext(ctx, method, fullURL.String(), bodyReader)
 	if err != nil {
 		return nil, errors.Wrap(err, errors.InvalidArgument, "创建HTTP请求失败")
 	}
@@ -218,8 +242,25 @@ func (c *Client) Delete(ctx context.Context, path string, headers map[string]str
 }
 
 // GetJSON 发送GET请求并将响应解析为JSON
-func (c *Client) GetJSON(ctx context.Context, path string, headers map[string]string, result interface{}) error {
-	resp, err := c.Get(ctx, path, headers)
+func (c *Client) GetJSON(ctx context.Context, path string, params map[string]string, result interface{}) error {
+	// 构建URL与查询参数
+	if len(params) > 0 {
+		// 创建url.Values来构建查询字符串
+		values := url.Values{}
+		for k, v := range params {
+			values.Add(k, v)
+		}
+
+		// 检查路径是否已包含?
+		if strings.Contains(path, "?") {
+			path = path + "&" + values.Encode()
+		} else {
+			path = path + "?" + values.Encode()
+		}
+	}
+
+	// 使用构建好的带查询参数的URL发送请求
+	resp, err := c.Get(ctx, path, nil)
 	if err != nil {
 		return err
 	}

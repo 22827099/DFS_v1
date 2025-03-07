@@ -261,10 +261,7 @@ func loadEnvVars(val reflect.Value) error {
 	return nil
 }
 
-// loadEnvVarsForConfig 环境变量加载封装
-func loadEnvVarsForConfig(config *SystemConfig) error {
-	return loadEnvVars(reflect.ValueOf(config))
-}
+
 
 // DisableEnvOverrideForTests 禁用环境变量覆盖（测试用）
 func DisableEnvOverrideForTests() {
@@ -312,10 +309,7 @@ func applyDefaults(val reflect.Value) {
 	}
 }
 
-// applyDefaultsToConfig 应用默认值封装
-func applyDefaultsToConfig(config *SystemConfig) {
-	applyDefaults(reflect.ValueOf(config))
-}
+
 
 // isZeroValue 判断值是否为零值
 func isZeroValue(v reflect.Value) bool {
