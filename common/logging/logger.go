@@ -8,9 +8,6 @@ import (
 	"time"
 )
 
-// LogLevel 日志级别
-type LogLevel int
-
 const (
 	DEBUG LogLevel = iota
 	INFO
@@ -19,15 +16,7 @@ const (
 	FATAL
 )
 
-var levelNames = map[LogLevel]string{
-	DEBUG: "DEBUG",
-	INFO:  "INFO",
-	WARN:  "WARN",
-	ERROR: "ERROR",
-	FATAL: "FATAL",
-}
-
-// Logger 日志接口
+// Logger 定义日志记录器接口
 type Logger interface {
 	Debug(format string, args ...interface{})
 	Info(format string, args ...interface{})
@@ -36,6 +25,7 @@ type Logger interface {
 	Fatal(format string, args ...interface{})
 	SetLevel(level LogLevel)
 	SetOutput(w io.Writer)
+	WithContext(ctx map[string]interface{}) Logger
 }
 
 // DefaultLogger 默认日志实现
@@ -44,6 +34,49 @@ type DefaultLogger struct {
 	output    io.Writer
 	mu        sync.Mutex
 	formatter Formatter
+}
+
+// WithContext 创建带有上下文的日志记录器
+func (l *DefaultLogger) WithContext(ctx map[string]interface{}) Logger {
+	// 创建新的日志记录器，复制原始记录器的设置
+	newLogger := &DefaultLogger{
+		level:     l.level,
+		output:    l.output,
+		formatter: l.formatter,
+	}
+
+	// 如果原始格式化器支持上下文，则设置上下文
+	if contextFormatter, ok := newLogger.formatter.(ContextFormatter); ok {
+		contextFormatter = contextFormatter.WithContext(ctx)
+		newLogger.formatter = contextFormatter
+	}
+
+	return newLogger
+}
+
+// ContextFormatter 扩展基本的Formatter，支持上下文信息
+type ContextFormatter interface {
+	Formatter
+	WithContext(ctx map[string]interface{}) ContextFormatter
+}
+
+// WithContext 创建带有上下文的格式化器
+func (f *DefaultFormatter) WithContext(ctx map[string]interface{}) ContextFormatter {
+	newFormatter := &DefaultFormatter{
+		context: make(map[string]interface{}, len(f.context)+len(ctx)),
+	}
+
+	// 复制现有上下文
+	for k, v := range f.context {
+		newFormatter.context[k] = v
+	}
+
+	// 添加新上下文
+	for k, v := range ctx {
+		newFormatter.context[k] = v
+	}
+
+	return newFormatter
 }
 
 // NewLogger 创建新的日志记录器
@@ -127,6 +160,13 @@ func (l *DefaultLogger) Fatal(format string, args ...interface{}) {
 
 // 全局日志实例
 var std = NewLogger()
+
+// 全局日志实例
+var DefaultLoggerInstance = &DefaultLogger{
+	level:     LevelInfo,
+	output:    os.Stdout,
+	formatter: NewDefaultFormatter(),
+}
 
 // 提供全局日志方法
 func Debug(format string, args ...interface{}) {

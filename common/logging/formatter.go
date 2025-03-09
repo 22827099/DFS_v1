@@ -21,6 +21,7 @@ type Formatter interface {
 type DefaultFormatter struct {
 	TimeFormat string
 	Colors     bool
+	context map[string]interface{} // 添加这个字段，以便在格式化器中使用上下文
 }
 
 // 颜色常量
