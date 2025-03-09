@@ -3,10 +3,13 @@ package logging
 import (
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"sync"
 	"time"
 )
+
+type LogLevel int
 
 const (
 	DEBUG LogLevel = iota
@@ -88,6 +91,88 @@ func NewLogger() Logger {
 	}
 }
 
+// defaultLogger 提供基本的日志实现
+type defaultLogger struct {
+	name   string
+	logger *log.Logger
+	level  LogLevel
+}
+// GetLogger 返回指定名称的日志记录器，如果不存在则创建新的
+func GetLogger(name string) Logger {
+	loggerMutex.Lock()
+	defer loggerMutex.Unlock()
+
+	if logger, exists := loggers[name]; exists {
+		return logger
+	}
+
+	// 创建新的日志记录器
+	logger := &defaultLogger{
+		name:   name,
+		logger: log.New(os.Stdout, fmt.Sprintf("[%s] ", name), log.LstdFlags),
+		level:  INFO,
+	}
+	loggers[name] = logger
+	return logger
+}
+
+// Debug 实现Logger接口的Debug方法
+func (l *defaultLogger) Debug(format string, args ...interface{}) {
+	if l.level <= DEBUG {
+		l.logger.Printf("DEBUG: "+format, args...)
+	}
+}
+
+// Info 实现Logger接口的Info方法
+func (l *defaultLogger) Info(format string, args ...interface{}) {
+	if l.level <= INFO {
+		l.logger.Printf("INFO: "+format, args...)
+	}
+}
+
+// Warn 实现Logger接口的Warn方法
+func (l *defaultLogger) Warn(format string, args ...interface{}) {
+	if l.level <= WARN {
+		l.logger.Printf("WARN: "+format, args...)
+	}
+}
+
+// Error 实现Logger接口的Error方法
+func (l *defaultLogger) Error(format string, args ...interface{}) {
+	if l.level <= ERROR {
+		l.logger.Printf("ERROR: "+format, args...)
+	}
+}
+
+// Fatal 实现Logger接口的Fatal方法
+func (l *defaultLogger) Fatal(format string, args ...interface{}) {
+	if l.level <= FATAL {
+		l.logger.Printf("FATAL: "+format, args...)
+		os.Exit(1)
+	}
+}
+
+// SetLevel 实现Logger接口的SetLevel方法
+func (l *defaultLogger) SetLevel(level LogLevel) {
+	l.level = level
+}
+
+// SetOutput 实现Logger接口的SetOutput方法
+func (l *defaultLogger) SetOutput(w io.Writer) {
+	l.logger.SetOutput(w)
+}
+
+// WithContext 实现Logger接口的WithContext方法
+func (l *defaultLogger) WithContext(ctx map[string] interface{}) Logger {
+	// 简单实现，实际可能需要更复杂的处理
+	newLogger := &defaultLogger{
+		name:   l.name,
+		logger: l.logger,
+		level:  l.level,
+	}
+	return newLogger
+}
+
 // SetFormatter 设置日志格式化器
 func (l *DefaultLogger) SetFormatter(formatter Formatter) {
 	l.mu.Lock()
@@ -102,12 +187,25 @@ func (l *DefaultLogger) SetLevel(level LogLevel) {
 	l.level = level
 }
 
-// SetOutput 设置输出
+// SetOutput 设置日志输出
 func (l *DefaultLogger) SetOutput(w io.Writer) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.output = w
 }
+
+// 全局日志实例
+var DefaultLoggerInstance = &DefaultLogger{
+	level:     INFO,
+	output:    os.Stdout,
+	formatter: NewDefaultFormatter(),
+}
+
+// 全局日志变量声明
+var (
+	loggerMutex sync.Mutex
+	loggers     = make(map[string]Logger)
+)
 
 // log 内部日志方法
 func (l *DefaultLogger) log(level LogLevel, format string, args ...interface{}) {
@@ -160,13 +258,6 @@ func (l *DefaultLogger) Fatal(format string, args ...interface{}) {
 
 // 全局日志实例
 var std = NewLogger()
-
-// 全局日志实例
-var DefaultLoggerInstance = &DefaultLogger{
-	level:     LevelInfo,
-	output:    os.Stdout,
-	formatter: NewDefaultFormatter(),
-}
 
 // 提供全局日志方法
 func Debug(format string, args ...interface{}) {

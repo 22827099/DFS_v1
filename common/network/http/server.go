@@ -81,18 +81,18 @@ func (s *Server) SetIdleTimeout(timeout time.Duration) {
 	s.idleTimeout = timeout
 }
 
-// buildHandler 构建处理器链
-func (s *Server) buildHandler() http.Handler {
-    // 从路由器开始
-    var handler http.Handler = s.router
+// // buildHandler 构建处理器链
+// func (s *Server) buildHandler() http.Handler {
+//     // 从路由器开始
+//     var handler http.Handler = s.router
     
-    // 应用所有中间件
-    for i := len(s.middlewares) - 1; i >= 0; i-- {
-        handler = s.middlewares[i](handler)
-    }
+//     // 应用所有中间件
+//     for i := len(s.middlewares) - 1; i >= 0; i-- {
+//         handler = s.middlewares[i](handler)
+//     }
     
-    return handler
-}
+//     return handler
+// }
 
 // Start 启动HTTP服务器
 func (s *Server) Start() error {
@@ -134,6 +134,12 @@ func (s *Server) Stop(ctx context.Context) error {
 		return s.server.Shutdown(ctx)
 	}
 	return nil
+}
+
+// Shutdown 优雅地关闭HTTP服务器
+func (s *Server) Shutdown(ctx context.Context) error {
+    // 委托给标准库Server的Shutdown方法
+    return s.server.Shutdown(ctx)
 }
 
 // GET 注册GET路由

@@ -1,8 +1,5 @@
 package logging
 
-// LogLevel 定义日志记录级别
-type LogLevel int
-
 // 日志级别常量
 const (
 	LevelDebug LogLevel = iota // 最详细的开发级别
