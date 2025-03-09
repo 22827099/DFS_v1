@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"DFS_v1/common/security/token"
+	"github.com/22827099/DFS_v1/common/security/token"
 )
 
 // AuthProvider 是身份验证提供者接口
