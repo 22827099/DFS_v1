@@ -22,9 +22,10 @@ type ServerConfig struct {
 	Port         int           `json:"port"`
 	ReadTimeout  time.Duration `json:"read_timeout"`
 	WriteTimeout time.Duration `json:"write_timeout"`
+	EnableCORS   bool     	   `json:"enable_cors"`    // 是否启用CORS
+    AllowOrigins []string 	   `json:"allow_origins"`  // 允许的来源
 }
 
-// DatabaseConfig 数据库配置
 // DatabaseConfig 数据库配置
 type DatabaseConfig struct {
 	Type            string `json:"type"`              // 数据库类型: sqlite, mysql, postgres 等
@@ -51,6 +52,8 @@ type SecurityConfig struct {
 	EnableTLS bool   `json:"enable_tls"` // 是否启用TLS加密
 	CertFile  string `json:"cert_file"`  // TLS证书文件路径
 	KeyFile   string `json:"key_file"`   // TLS密钥文件路径
+	EnableAuth   bool     	   `json:"enable_auth"`    // 是否启用基本认证
+	AuthUser     string        `json:"auth_user"`      // 认证用户名
 }
 
 // LoggingConfig 日志配置
