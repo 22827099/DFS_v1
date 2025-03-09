@@ -43,8 +43,46 @@ type DatabaseConfig struct {
 
 // ClusterConfig 集群配置
 type ClusterConfig struct {
-	Nodes       []string `json:"nodes"`        // 集群节点地址列表
-	ElectionTTL int      `json:"election_ttl"` // 选举超时时间
+	// 节点标识
+	NodeID string `json:"node_id"`
+	
+	// 集群成员配置
+	Peers []string `json:"peers"`
+	
+	// 选举配置
+	ElectionTimeout  time.Duration `json:"election_timeout"`
+	HeartbeatTimeout time.Duration `json:"heartbeat_timeout"`
+	
+	// 心跳配置
+	HeartbeatInterval time.Duration `json:"heartbeat_interval"`
+	SuspectTimeout    time.Duration `json:"suspect_timeout"`
+	DeadTimeout       time.Duration `json:"dead_timeout"`
+	CleanupInterval   time.Duration `json:"cleanup_interval"`
+	
+	// 负载均衡配置
+	RebalanceEvaluationInterval time.Duration `json:"rebalance_eval_interval"`
+	ImbalanceThreshold          float64       `json:"imbalance_threshold"`
+	MaxConcurrentMigrations     int           `json:"max_concurrent_migrations"`
+	MinMigrationInterval        time.Duration `json:"min_migration_interval"`
+	MigrationTimeout            time.Duration `json:"migration_timeout"`
+}
+
+// HeartbeatConfig 心跳管理器配置
+type HeartbeatConfig struct {
+	NodeID            string
+	HeartbeatInterval time.Duration
+	SuspectTimeout    time.Duration
+	DeadTimeout       time.Duration
+	CleanupInterval   time.Duration
+}
+
+// LoadBalancerConfig 负载均衡管理器配置
+type LoadBalancerConfig struct {
+	EvaluationInterval      time.Duration // 负载评估时间间隔
+	ImbalanceThreshold      float64       // 触发再平衡的负载不平衡阈值(百分比)
+	MaxConcurrentMigrations int           // 同时进行的最大迁移任务数
+	MinMigrationInterval    time.Duration // 最小迁移间隔时间
+	MigrationTimeout        time.Duration // 迁移会话超时时间
 }
 
 // SecurityConfig 安全配置
@@ -83,3 +121,4 @@ func LoadConfig(path string) (*Config, error) {
 
 	return config, nil
 }
+

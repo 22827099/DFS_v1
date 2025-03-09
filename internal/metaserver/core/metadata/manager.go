@@ -3,7 +3,6 @@ package metadata
 import (
 	"context"
 	"fmt"
-	"sync"
 
 	"github.com/22827099/DFS_v1/common/logging"
 	"github.com/22827099/DFS_v1/internal/metaserver/core/database"
@@ -23,7 +22,6 @@ type Manager struct {
 	dirRepo     *database.Repository
 	chunkRepo   *database.Repository
 	replicaRepo *database.Repository
-	mu          sync.RWMutex
 }
 
 // NewManager 创建新的元数据管理器

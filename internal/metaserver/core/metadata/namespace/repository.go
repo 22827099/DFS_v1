@@ -4,7 +4,7 @@ import (
 	"context"
 	"database/sql"
 
-	"github.com/22827099/DFS_v1/internal/metaserver/core/models_share"
+	"github.com/22827099/DFS_v1/internal/metaserver/core/models"
 
 )
 

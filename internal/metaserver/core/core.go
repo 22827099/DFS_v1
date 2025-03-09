@@ -4,23 +4,23 @@ import (
 	"context"
 
 	"github.com/22827099/DFS_v1/common/logging"
-	"github.com/22827099/DFS_v1/internal/metaserver/config"
-	// "github.com/22827099/DFS_v1/internal/metaserver/core/cluster"
+	metaconfig "github.com/22827099/DFS_v1/internal/metaserver/config"
+	"github.com/22827099/DFS_v1/internal/metaserver/core/cluster"
 	"github.com/22827099/DFS_v1/internal/metaserver/core/database"
 	"github.com/22827099/DFS_v1/internal/metaserver/core/metadata"
 )
 
 // MetaCore 封装元数据服务器的核心功能
 type MetaCore struct {
-	config  *config.Config
+	config  *metaconfig.Config
 	logger  logging.Logger
 	db      *database.Manager
 	meta    *metadata.Manager
-	cluster *cluster.Manager
+	cluster cluster.Manager
 }
 
 // NewMetaCore 创建核心组件管理器
-func NewMetaCore(cfg *config.Config, logger logging.Logger) (*MetaCore, error) {
+func NewMetaCore(cfg *metaconfig.Config, logger logging.Logger) (*MetaCore, error) {
 	// 初始化数据库
 	db, err := database.NewManager(cfg.Database, logger)
 	if err != nil {

@@ -1,33 +1,21 @@
 package rebalance
 
 import (
-    "context"
-    "sync"
-    "time"
+	"context"
+	"sync"
+	"time"
 
-    "github.com/22827099/DFS_v1/common/logging"
+	"github.com/22827099/DFS_v1/common/logging"
+    metaconfig "github.com/22827099/DFS_v1/internal/metaserver/config"
+    "github.com/22827099/DFS_v1/internal/types"
 )
-
-// Config 负载均衡管理器配置
-type Config struct {
-    // 负载评估时间间隔
-    EvaluationInterval time.Duration
-    // 触发再平衡的负载不平衡阈值(百分比)
-    ImbalanceThreshold float64
-    // 同时进行的最大迁移任务数
-    MaxConcurrentMigrations int
-    // 最小迁移间隔时间
-    MinMigrationInterval time.Duration
-    // 迁移会话超时时间
-    MigrationTimeout time.Duration
-}
 
 // Manager 负载均衡管理器
 type Manager struct {
     mu              sync.RWMutex
     ctx             context.Context
     cancel          context.CancelFunc
-    cfg             *Config
+    cfg             *metaconfig.LoadBalancerConfig
     logger          logging.Logger
     metricCollector *MetricCollector
     strategy        BalanceStrategy
@@ -35,12 +23,14 @@ type Manager struct {
     lastRebalance   time.Time
     isRebalancing   bool
     triggerCh       chan struct{}
+    nodeMetrics     map[string]*types.NodeMetrics     // 所有节点的性能指标
+    metricsLock     sync.RWMutex                // 保护metrics的互斥锁
 }
 
 // NewManager 创建负载均衡管理器
-func NewManager(cfg *Config, logger logging.Logger) (*Manager, error) {
+func NewManager(cfg *metaconfig.LoadBalancerConfig, logger logging.Logger) (*Manager, error) {
     if cfg == nil {
-        cfg = &Config{
+        cfg = &metaconfig.LoadBalancerConfig{
             EvaluationInterval:      5 * time.Minute,
             ImbalanceThreshold:      20.0, // 20%
             MaxConcurrentMigrations: 5,
@@ -133,8 +123,22 @@ func (m *Manager) GetStatus() map[string]interface{} {
 }
 
 // UpdateNodeMetrics 更新节点度量指标
-func (m *Manager) UpdateNodeMetrics(nodeID string, metrics *NodeMetrics) {
+func (m *Manager) UpdateNodeMetrics(nodeID string, metrics *types.NodeMetrics) {
     m.metricCollector.UpdateNodeMetrics(nodeID, metrics)
+}
+
+// GetNodeMetrics 获取指定节点的性能指标
+func (m *Manager) GetNodeMetrics(nodeID string) *types.NodeMetrics {
+    m.metricsLock.RLock()
+    defer m.metricsLock.RUnlock()
+    
+    if metrics, exists := m.nodeMetrics[nodeID]; exists {
+        // 返回指标副本以避免并发修改问题
+        metricsCopy := *metrics
+        return &metricsCopy
+    }
+    
+    return nil
 }
 
 // 运行评估循环
@@ -221,7 +225,7 @@ func (m *Manager) evaluateAndRebalance() {
 }
 
 // 执行再平衡
-func (m *Manager) performRebalance(nodeMetrics map[string]*NodeMetrics) error {
+func (m *Manager) performRebalance(nodeMetrics map[string]*types.NodeMetrics) error {
     // 生成迁移计划
     plans, err := m.strategy.GeneratePlan(nodeMetrics)
     if err != nil {

@@ -3,39 +3,25 @@ package rebalance
 import (
 	"sync"
 	"time"
-)
 
-// NodeMetrics 节点度量指标
-type NodeMetrics struct {
-	NodeID            string    `json:"node_id"`             // 节点ID
-	CPUUsage          float64   `json:"cpu_usage"`           // CPU使用率（百分比）
-	MemoryUsage       float64   `json:"memory_usage"`        // 内存使用率（百分比）
-	DiskUsage         float64   `json:"disk_usage"`          // 磁盘使用率（百分比）
-	TotalStorage      uint64    `json:"total_storage"`       // 存储总容量（字节）
-	UsedStorage       uint64    `json:"used_storage"`        // 已用存储（字节）
-	FreeStorage       uint64    `json:"free_storage"`        // 可用存储（字节）
-	NetworkThroughput float64   `json:"network_throughput"`  // 网络吞吐量（字节/秒）
-	IOPS              float64   `json:"iops"`                // IOPS（每秒IO操作数）
-	ShardCount        int       `json:"shard_count"`         // 数据分片数量
-	HotShardCount     int       `json:"hot_shard_count"`     // 热点数据分片数量
-	UpdateTime        time.Time `json:"update_time"`         // 更新时间
-}
+	"github.com/22827099/DFS_v1/internal/types"
+)
 
 // MetricCollector 指标收集器
 type MetricCollector struct {
 	mu      sync.RWMutex
-	metrics map[string]*NodeMetrics
+	metrics map[string]*types.NodeMetrics
 }
 
 // NewMetricCollector 创建新的指标收集器
 func NewMetricCollector() *MetricCollector {
 	return &MetricCollector{
-		metrics: make(map[string]*NodeMetrics),
+		metrics: make(map[string]*types.NodeMetrics),
 	}
 }
 
 // UpdateNodeMetrics 更新节点指标
-func (mc *MetricCollector) UpdateNodeMetrics(nodeID string, metrics *NodeMetrics) {
+func (mc *MetricCollector) UpdateNodeMetrics(nodeID string, metrics *types.NodeMetrics) {
 	mc.mu.Lock()
 	defer mc.mu.Unlock()
 
@@ -50,7 +36,7 @@ func (mc *MetricCollector) UpdateNodeMetrics(nodeID string, metrics *NodeMetrics
 }
 
 // GetNodeMetrics 获取特定节点的指标
-func (mc *MetricCollector) GetNodeMetrics(nodeID string) *NodeMetrics {
+func (mc *MetricCollector) GetNodeMetrics(nodeID string) *types.NodeMetrics {
 	mc.mu.RLock()
 	defer mc.mu.RUnlock()
 
@@ -58,12 +44,12 @@ func (mc *MetricCollector) GetNodeMetrics(nodeID string) *NodeMetrics {
 }
 
 // GetAllMetrics 获取所有节点的指标
-func (mc *MetricCollector) GetAllMetrics() map[string]*NodeMetrics {
+func (mc *MetricCollector) GetAllMetrics() map[string]*types.NodeMetrics {
 	mc.mu.RLock()
 	defer mc.mu.RUnlock()
 
 	// 创建副本以避免数据竞争
-	result := make(map[string]*NodeMetrics, len(mc.metrics))
+	result := make(map[string]*types.NodeMetrics, len(mc.metrics))
 	for nodeID, metrics := range mc.metrics {
 		// 深复制每个指标对象
 		metricsCopy := *metrics

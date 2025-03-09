@@ -4,14 +4,16 @@ import (
 	"errors"
 	"math"
 	"sort"
+
+	"github.com/22827099/DFS_v1/internal/types"
 )
 
 // BalanceStrategy 负载均衡策略接口
 type BalanceStrategy interface {
 	// Evaluate 评估集群是否需要再平衡，返回是否需要以及不平衡程度
-	Evaluate(nodeMetrics map[string]*NodeMetrics) (bool, float64)
+	Evaluate(nodeMetrics map[string]*types.NodeMetrics) (bool, float64)
 	// GeneratePlan 根据节点指标生成迁移计划
-	GeneratePlan(nodeMetrics map[string]*NodeMetrics) ([]*MigrationPlan, error)
+	GeneratePlan(nodeMetrics map[string]*types.NodeMetrics) ([]*MigrationPlan, error)
 }
 
 // MigrationPlan 数据迁移计划
@@ -49,7 +51,7 @@ func NewWeightedScoreStrategy(cpuWeight, memoryWeight, diskWeight, shardWeight f
 }
 
 // Evaluate 评估集群是否需要再平衡
-func (s *WeightedScoreStrategy) Evaluate(nodeMetrics map[string]*NodeMetrics) (bool, float64) {
+func (s *WeightedScoreStrategy) Evaluate(nodeMetrics map[string]*types.NodeMetrics) (bool, float64) {
 	if len(nodeMetrics) < 2 {
 		return false, 0.0
 	}
@@ -92,7 +94,7 @@ func (s *WeightedScoreStrategy) Evaluate(nodeMetrics map[string]*NodeMetrics) (b
 }
 
 // GeneratePlan 生成迁移计划
-func (s *WeightedScoreStrategy) GeneratePlan(nodeMetrics map[string]*NodeMetrics) ([]*MigrationPlan, error) {
+func (s *WeightedScoreStrategy) GeneratePlan(nodeMetrics map[string]*types.NodeMetrics) ([]*MigrationPlan, error) {
 	if len(nodeMetrics) < 2 {
 		return nil, errors.New("至少需要两个节点才能生成迁移计划")
 	}
@@ -101,7 +103,7 @@ func (s *WeightedScoreStrategy) GeneratePlan(nodeMetrics map[string]*NodeMetrics
 	type nodeScore struct {
 		NodeID string
 		Score  float64
-		Metric *NodeMetrics
+		Metric *types.NodeMetrics
 	}
 
 	scores := make([]nodeScore, 0, len(nodeMetrics))
@@ -191,7 +193,7 @@ func (s *WeightedScoreStrategy) GeneratePlan(nodeMetrics map[string]*NodeMetrics
 }
 
 // calculateNodeScore 计算节点的加权负载得分
-func (s *WeightedScoreStrategy) calculateNodeScore(metrics *NodeMetrics, allMetrics map[string]*NodeMetrics) float64 {
+func (s *WeightedScoreStrategy) calculateNodeScore(metrics *types.NodeMetrics, allMetrics map[string]*types.NodeMetrics) float64 {
 	// 标准化分片数量相对于集群平均水平
 	avgShards := 0.0
 	for _, m := range allMetrics {

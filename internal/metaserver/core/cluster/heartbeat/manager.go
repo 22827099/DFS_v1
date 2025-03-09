@@ -7,30 +7,14 @@ import (
 
 	"github.com/22827099/DFS_v1/common/logging"
 	httplib "github.com/22827099/DFS_v1/common/network/http"
-)
-
-// NodeState 表示节点的健康状态
-type NodeState string
-
-const (
-	NodeStateHealthy NodeState = "healthy"
-	NodeStateSuspect NodeState = "suspect"
-	NodeStateDead    NodeState = "dead"
+	"github.com/22827099/DFS_v1/internal/types"
+	"github.com/22827099/DFS_v1/internal/metaserver/config"
 )
 
 // StateChange 表示节点状态变化
 type StateChange struct {
 	NodeID string
-	State  NodeState
-}
-
-// Config 心跳管理器配置
-type Config struct {
-	NodeID            string
-	HeartbeatInterval time.Duration
-	SuspectTimeout    time.Duration
-	DeadTimeout       time.Duration
-	CleanupInterval   time.Duration
+	State  types.NodeStatus
 }
 
 // Manager 管理节点心跳检测
@@ -38,23 +22,22 @@ type Manager struct {
 	mu            sync.RWMutex
 	ctx           context.Context
 	cancel        context.CancelFunc
-	cfg           *Config
+	cfg           *config.HeartbeatConfig
 	nodeStates    map[string]*nodeState
 	stateChangeCh chan StateChange
-	// httpClient    *http.Client
 	logger        logging.Logger
 }
 
 // nodeState 内部节点状态记录
 type nodeState struct {
 	NodeID        string
-	State         NodeState
+	State         types.NodeStatus
 	LastHeartbeat time.Time
 	FailCount     int
 }
 
 // NewManager 创建心跳管理器
-func NewManager(cfg *Config, logger logging.Logger) (*Manager, error) {
+func NewManager(cfg *config.HeartbeatConfig, logger logging.Logger) (*Manager, error) {
 	if cfg.HeartbeatInterval == 0 {
 		cfg.HeartbeatInterval = 1 * time.Second
 	}
@@ -110,7 +93,7 @@ func (m *Manager) RegisterNode(nodeID string) {
 
 	m.nodeStates[nodeID] = &nodeState{
 		NodeID:        nodeID,
-		State:         NodeStateHealthy,
+		State:         types.NodeStatusHealthy,
 		LastHeartbeat: time.Now(),
 		FailCount:     0,
 	}
@@ -128,7 +111,7 @@ func (m *Manager) UnregisterNode(nodeID string) {
 }
 
 // RecordHeartbeat 记录收到的心跳
-func (m *Manager) RecordHeartbeat(nodeID string) {
+func (m *Manager) RecordHeartbeat(nodeID string) {	
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -136,26 +119,26 @@ func (m *Manager) RecordHeartbeat(nodeID string) {
 		oldState := state.State
 		state.LastHeartbeat = time.Now()
 		state.FailCount = 0
-		state.State = NodeStateHealthy
+		state.State = types.NodeStatusHealthy
 
-		if oldState != NodeStateHealthy {
+		if oldState != types.NodeStatusHealthy {
 			m.stateChangeCh <- StateChange{
 				NodeID: nodeID,
-				State:  NodeStateHealthy,
+				State:  types.NodeStatusHealthy,
 			}
 		}
 	} else {
 		// 新节点，自动注册
 		m.nodeStates[nodeID] = &nodeState{
 			NodeID:        nodeID,
-			State:         NodeStateHealthy,
+			State:         types.NodeStatusHealthy,
 			LastHeartbeat: time.Now(),
 			FailCount:     0,
 		}
 
 		m.stateChangeCh <- StateChange{
 			NodeID: nodeID,
-			State:  NodeStateHealthy,
+			State:  types.NodeStatusHealthy,
 		}
 	}
 }
@@ -249,19 +232,19 @@ func (m *Manager) checkHeartbeats() {
 				timeSinceLastHeartbeat := now.Sub(state.LastHeartbeat)
 
 				// 处理超时的节点
-				if state.State == NodeStateHealthy && timeSinceLastHeartbeat > m.cfg.SuspectTimeout {
-					state.State = NodeStateSuspect
+				if state.State == types.NodeStatusHealthy && timeSinceLastHeartbeat > m.cfg.SuspectTimeout {
+					state.State = types.NodeStatusSuspect
 					state.FailCount++
 					m.stateChangeCh <- StateChange{
 						NodeID: nodeID,
-						State:  NodeStateSuspect,
+						State:  types.NodeStatusSuspect,
 					}
 					m.logger.Warn("节点可疑", "nodeID", nodeID, "lastHeartbeat", state.LastHeartbeat)
-				} else if state.State == NodeStateSuspect && timeSinceLastHeartbeat > m.cfg.DeadTimeout {
-					state.State = NodeStateDead
+				} else if state.State == types.NodeStatusSuspect && timeSinceLastHeartbeat > m.cfg.DeadTimeout {
+					state.State = types.NodeStatusDead
 					m.stateChangeCh <- StateChange{
 						NodeID: nodeID,
-						State:  NodeStateDead,
+						State:  types.NodeStatusDead,
 					}
 					m.logger.Error("节点死亡", "nodeID", nodeID, "lastHeartbeat", state.LastHeartbeat)
 				}
@@ -287,7 +270,7 @@ func (m *Manager) cleanupDeadNodes() {
 
 			for nodeID, state := range m.nodeStates {
 				// 删除长时间处于死亡状态的节点
-				if state.State == NodeStateDead && now.Sub(state.LastHeartbeat) > 3*m.cfg.DeadTimeout {
+				if state.State == types.NodeStatusDead && now.Sub(state.LastHeartbeat) > 3*m.cfg.DeadTimeout {
 					delete(m.nodeStates, nodeID)
 					m.logger.Info("清理长期不活跃的节点", "nodeID", nodeID)
 				}
@@ -296,4 +279,30 @@ func (m *Manager) cleanupDeadNodes() {
 			m.mu.Unlock()
 		}
 	}
+}
+
+// GetAllNodeStates 返回所有节点的状态信息
+func (m *Manager) GetAllNodeStates() map[string]types.NodeStatus {
+    m.mu.RLock()
+    defer m.mu.RUnlock()
+    
+    // 创建副本以避免并发访问问题
+    result := make(map[string]types.NodeStatus, len(m.nodeStates))
+    for id, state := range m.nodeStates {
+        result[id] = state.State
+    }
+    
+    return result
+}
+
+// GetNodeState 返回指定节点的状态
+func (m *Manager) GetNodeState(nodeID string) types.NodeStatus {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	
+	if state, exists := m.nodeStates[nodeID]; exists {
+		return state.State
+	}
+	
+	return types.NodeStatusUnknown
 }

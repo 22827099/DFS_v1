@@ -10,7 +10,7 @@ import (
 	"github.com/22827099/DFS_v1/common/logging"
 	"github.com/22827099/DFS_v1/internal/metaserver/core/database"
 	"github.com/22827099/DFS_v1/internal/metaserver/core/metadata/lock"
-	"github.com/22827099/DFS_v1/internal/metaserver/core/models_share"
+	"github.com/22827099/DFS_v1/internal/metaserver/core/models"
 )
 
 // Manager 负责命名空间管理
