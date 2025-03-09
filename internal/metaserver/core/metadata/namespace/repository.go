@@ -4,7 +4,8 @@ import (
 	"context"
 	"database/sql"
 
-	"github.com/22827099/DFS_v1/internal/metaserver/core/models"
+	"github.com/22827099/DFS_v1/internal/metaserver/core/models_share"
+
 )
 
 // Repository 定义了通用的数据访问接口
