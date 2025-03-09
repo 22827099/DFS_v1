@@ -31,6 +31,7 @@ const (
 	// 一致性错误 (1300-1399)
 	ConsensusError    ErrorCode = 1300 // 共识错误
 	QuorumNotAchieved ErrorCode = 1301 // 未达到法定人数
+	
 
 	// 安全错误 (1400-1499)
 	SecurityError       ErrorCode = 1400 // 安全通用错误
