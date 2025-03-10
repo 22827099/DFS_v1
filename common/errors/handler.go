@@ -157,36 +157,44 @@ func IsErrorCode(err error, code ErrorCode) bool {
 	return GetCode(err) == code
 }
 
+// 检查是否为"未找到"类型错误
 func IsNotFound(err error) bool {
 	code := GetCode(err)
 	return code == NotFound || code == FileNotFound
 }
 
+// 检查是否为无效参数错误
 func IsInvalidArgument(err error) bool {
 	return IsErrorCode(err, InvalidArgument)
 }
 
+// 检查是否为权限拒绝错误
 func IsPermissionDenied(err error) bool {
 	return IsErrorCode(err, PermissionDenied)
 }
 
+// 检查是否为已存在类型错误
 func IsAlreadyExists(err error) bool {
 	code := GetCode(err)
 	return code == AlreadyExists || code == FileAlreadyExists
 }
 
+// 检查是否为未认证错误
 func IsUnauthenticated(err error) bool {
 	return IsErrorCode(err, Unauthenticated)
 }
 
+// 检查是否为资源耗尽错误
 func IsResourceExhausted(err error) bool {
-    return IsErrorCode(err, ResourceExhausted)
+	return IsErrorCode(err, ResourceExhausted)
 }
 
+// 检查是否为内部错误
 func IsInternal(err error) bool {
-    return IsErrorCode(err, Internal)
+	return IsErrorCode(err, Internal)
 }
 
+// 实现JSON序列化接口
 func (e *Error) MarshalJSON() ([]byte, error) {
 	type jsonError struct {
 		Code     ErrorCode      `json:"code"`
