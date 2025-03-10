@@ -4,7 +4,7 @@ import (
 	"net/http"
 
 	"github.com/22827099/DFS_v1/internal/metaserver/core/cluster"
-	"github.com/gorilla/mux"
+	nethttp "github.com/22827099/DFS_v1/common/network/http"
 )
 
 // ClusterAPI 处理集群相关的API请求
@@ -20,12 +20,12 @@ func NewClusterAPI(cluster cluster.Manager) *ClusterAPI {
 }
 
 // RegisterRoutes 注册集群相关路由
-func (c *ClusterAPI) RegisterRoutes(router *mux.Router) {
-	router.HandleFunc("/nodes", c.ListNodes).Methods("GET")
-	router.HandleFunc("/nodes/{id}", c.GetNodeInfo).Methods("GET")
-	router.HandleFunc("/leader", c.GetLeader).Methods("GET")
-	router.HandleFunc("/rebalance", c.TriggerRebalance).Methods("POST")
-	router.HandleFunc("/rebalance/status", c.GetRebalanceStatus).Methods("GET")
+func (c *ClusterAPI) RegisterRoutes(router nethttp.RouteGroup) {
+	router.GET("/nodes", c.ListNodes)
+	router.GET("/nodes/{id}", c.GetNodeInfo)
+	router.GET("/leader", c.GetLeader)
+	router.POST("/rebalance", c.TriggerRebalance)
+	router.GET("/rebalance/status", c.GetRebalanceStatus)
 }
 
 // ListNodes 列出集群节点

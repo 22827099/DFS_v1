@@ -7,9 +7,9 @@ import (
 
 	"github.com/22827099/DFS_v1/common/config"
 	"github.com/22827099/DFS_v1/internal/metaserver/core/cluster"
-	"github.com/22827099/DFS_v1/internal/metaserver/server/api"
-	"github.com/gorilla/mux"
+	nethttp "github.com/22827099/DFS_v1/common/network/http"
 	"github.com/shirou/gopsutil/cpu"
+	"github.com/22827099/DFS_v1/internal/metaserver/server/api"
 )
 
 // AdminAPI 处理管理相关的API请求
@@ -38,9 +38,9 @@ func NewAdminAPI(config *config.SystemConfig, cluster cluster.Manager) *AdminAPI
 }
 
 // RegisterRoutes 注册管理相关路由
-func (a *AdminAPI) RegisterRoutes(router *mux.Router) {
-	router.HandleFunc("/health", a.HealthCheck).Methods("GET")
-	router.HandleFunc("/status", a.ServerStatus).Methods("GET")
+func (a *AdminAPI) RegisterRoutes(router nethttp.RouteGroup) {
+	router.GET("/health", a.HealthCheck)
+	router.GET("/status", a.ServerStatus)
 }
 
 // HealthCheck 处理健康检查请求

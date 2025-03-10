@@ -8,7 +8,6 @@ import (
     "github.com/22827099/DFS_v1/common/errors"
     "github.com/22827099/DFS_v1/internal/metaserver/core/metadata"
     "github.com/22827099/DFS_v1/internal/metaserver/server/api"
-    "github.com/gorilla/mux"
     nethttp "github.com/22827099/DFS_v1/common/network/http"
     "github.com/22827099/DFS_v1/common/utils"
 )
@@ -26,10 +25,10 @@ func NewDirectoriesAPI(store metadata.Store) *DirectoriesAPI {
 }
 
 // RegisterRoutes 注册目录相关路由
-func (d *DirectoriesAPI) RegisterRoutes(router *mux.Router) {
-    router.HandleFunc("/dirs/{path:.*}", d.ListDirectory).Methods("GET")
-    router.HandleFunc("/dirs/{path:.*}", d.CreateDirectory).Methods("POST")
-    router.HandleFunc("/dirs/{path:.*}", d.DeleteDirectory).Methods("DELETE")
+func (d *DirectoriesAPI) RegisterRoutes(router nethttp.RouteGroup) {
+    router.GET("/dirs/{path:.*}", d.ListDirectory)
+    router.POST("/dirs/{path:.*}", d.CreateDirectory) 
+    router.DELETE("/dirs/{path:.*}", d.DeleteDirectory)
 }
 
 // ListDirectory 列出目录内容

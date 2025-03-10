@@ -7,7 +7,7 @@ import (
     "github.com/22827099/DFS_v1/common/errors"
     "github.com/22827099/DFS_v1/internal/metaserver/core/metadata"
     "github.com/22827099/DFS_v1/internal/metaserver/server/api"
-    "github.com/gorilla/mux"
+    nethttp "github.com/22827099/DFS_v1/common/network/http"
 
 )
 
@@ -32,11 +32,11 @@ type FileRequest struct {
 }
 
 // RegisterRoutes 注册文件相关路由
-func (f *FilesAPI) RegisterRoutes(router *mux.Router) {
-    router.HandleFunc("/files/{path:.*}", f.GetFileInfo).Methods("GET")
-    router.HandleFunc("/files/{path:.*}", f.CreateFile).Methods("POST")
-    router.HandleFunc("/files/{path:.*}", f.UpdateFile).Methods("PUT")
-    router.HandleFunc("/files/{path:.*}", f.DeleteFile).Methods("DELETE")
+func (f *FilesAPI) RegisterRoutes(router nethttp.RouteGroup) {
+    router.GET("/files/{path:.*}", f.GetFileInfo)
+    router.POST("/files/{path:.*}", f.CreateFile)
+    router.PUT("/files/{path:.*}", f.UpdateFile)
+    router.DELETE("/files/{path:.*}", f.DeleteFile)
 }
 
 // GetFileInfo 获取文件信息

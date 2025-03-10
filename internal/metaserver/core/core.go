@@ -12,11 +12,19 @@ import (
 
 // MetaCore 封装元数据服务器的核心功能
 type MetaCore struct {
-	config  *metaconfig.Config
-	logger  logging.Logger
-	db      *database.Manager
-	meta    *metadata.Manager
-	cluster cluster.Manager
+	// Configuration and logging
+	config  *metaconfig.Config    // 服务器配置信息
+	logger  logging.Logger        // 日志组件
+
+	// Core components
+	db      *database.Manager     // 数据库管理器
+	meta    *metadata.Manager     // 元数据管理器
+	cluster cluster.Manager       // 集群管理器
+
+	// Interface implementations
+	MetadataStore metadata.Store  // 元数据存储接口
+	ClusterMgr    cluster.Manager // 集群管理接口
+	DBManager     database.Manager // 数据库管理接口
 }
 
 // NewMetaCore 创建核心组件管理器

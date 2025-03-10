@@ -10,9 +10,14 @@ import (
 	"github.com/22827099/DFS_v1/common/config"
 	"github.com/22827099/DFS_v1/common/errors"
 	"github.com/22827099/DFS_v1/common/logging"
+	"github.com/22827099/DFS_v1/common/metrics"
 	nethttp "github.com/22827099/DFS_v1/common/network/http"
+	"github.com/22827099/DFS_v1/internal/metaserver/core"
+	metaconfig "github.com/22827099/DFS_v1/internal/metaserver/config"
 	"github.com/22827099/DFS_v1/internal/metaserver/core/cluster"
 	"github.com/22827099/DFS_v1/internal/metaserver/core/metadata"
+	"github.com/22827099/DFS_v1/internal/metaserver/server/middleware"
+	"github.com/22827099/DFS_v1/internal/metaserver/server/api/v1"
 )
 
 // MetadataServer 元数据服务器结构
@@ -24,6 +29,10 @@ type MetadataServer struct {
 	cluster    cluster.Manager
 	mu         sync.RWMutex
 	running    bool
+	metricsCollector metrics.Collector
+    metaCore         *core.MetaCore       // 添加这个字段
+	authService      middleware.AuthService       // 添加认证服务
+    txManager        middleware.TransactionManager // 添加事务管理器
 }
 
 // ServerOption 允许配置服务器的选项函数
@@ -35,12 +44,45 @@ func NewServer(cfg *config.SystemConfig, options ...ServerOption) (*MetadataServ
 		return nil, errors.New(errors.InvalidArgument, "配置不能为空")
 	}
 
-	logger := logging.GetLogger("metaserver")
-	server := &MetadataServer{
-		config:  cfg,
-		logger:  logger,
-		running: false,
-	}
+    // 初始化日志
+    logger := logging.NewLogger()
+    
+    // 初始化 HTTP 服务器
+    httpServer := nethttp.NewServer(fmt.Sprintf("%s:%d", "localhost", 8080))
+
+	// // 初始化认证服务 TODO: #2 添加认证服务
+	// authService := middleware.Auth(/* 必要参数 */)
+
+	// // 初始化事务管理器 TODO: #3 添加事务管理器
+	// txManager := db.NewTransactionManager(/* 必要参数 */)
+    
+    // 转换为元数据服务器配置
+    metaCfg := &metaconfig.Config{
+		Database: metaconfig.DatabaseConfig{},
+		Cluster:  metaconfig.ClusterConfig{},
+    }
+    
+    // 初始化元数据核心
+    metaCore, err := core.NewMetaCore(metaCfg, logger)
+    if err != nil {
+        return nil, errors.Wrap(err, errors.Internal, "failed to initialize meta core")
+    }
+    
+    // 初始化指标收集器
+    metricsCollector := metrics.NewCollector("metaserver")
+    
+    // 创建服务器实例
+    server := &MetadataServer{
+        config:           cfg,
+        logger:           logger,
+        httpServer:       httpServer,
+        metaCore:         metaCore,
+        metricsCollector: metricsCollector,
+        running:          false,
+		// authService:      authService,  // 注释掉
+        // txManager:        txManager,    // 注释掉
+    }
+    
 
 	// 应用选项
 	for _, option := range options {
@@ -64,9 +106,6 @@ func NewServer(cfg *config.SystemConfig, options ...ServerOption) (*MetadataServ
 		}
 		server.cluster = clusterMgr
 	}
-
-	// 创建HTTP服务器
-	httpServer := nethttp.NewServer(fmt.Sprintf(":%d", 8080)) // 默认端口，实际应从配置中读取
 
 	// 添加中间件
 	httpServer.Use(nethttp.RequestIDMiddleware())
@@ -169,26 +208,30 @@ func (s *MetadataServer) IsRunning() bool {
 
 // setupRoutes 设置HTTP路由
 func (s *MetadataServer) setupRoutes(httpServer *nethttp.Server) {
-	// 根路径 - 健康检查
-	httpServer.GET("/", s.handleHealthCheck)
-
-	// API版本前缀
-	apiV1 := "/api/v1"
-
-	// 元数据操作
-	httpServer.GET(apiV1+"/files/*path", s.handleGetFileInfo)
-	httpServer.POST(apiV1+"/files/*path", s.handleCreateFile)
-	httpServer.PUT(apiV1+"/files/*path", s.handleUpdateFile)
-	httpServer.DELETE(apiV1+"/files/*path", s.handleDeleteFile)
-	httpServer.GET(apiV1+"/dirs/*path", s.handleListDirectory)
-	httpServer.POST(apiV1+"/dirs/*path", s.handleCreateDirectory)
-	httpServer.DELETE(apiV1+"/dirs/*path", s.handleDeleteDirectory)
-
-	// 集群操作
-	httpServer.GET(apiV1+"/cluster/nodes", s.handleListNodes)
-	httpServer.GET(apiV1+"/cluster/nodes/:id", s.handleGetNodeInfo)
-	httpServer.GET(apiV1+"/cluster/leader", s.handleGetLeader)
-
-	// 管理操作
-	httpServer.GET(apiV1+"/admin/status", s.handleServerStatus)
+    // 注册中间件
+    httpServer.Use(nethttp.RequestIDMiddleware())
+    httpServer.Use(nethttp.LoggingMiddleware(s.logger))
+    httpServer.Use(nethttp.RecoveryMiddleware(s.logger))
+    httpServer.Use(middleware.Metrics(s.metricsCollector))
+    httpServer.Use(middleware.RateLimit(100, 1*time.Second))
+    
+    // 为需要认证的路由组添加认证中间件
+    apiRouter := httpServer.Group("/api/v1")
+    apiRouter.Use(middleware.Auth(s.authService))
+    apiRouter.Use(middleware.Transaction(s.txManager))
+    
+    // 创建并注册API处理器
+    filesAPI := v1.NewFilesAPI(s.metaStore)
+    dirsAPI := v1.NewDirectoriesAPI(s.metaStore)
+    clusterAPI := v1.NewClusterAPI(s.cluster)
+    adminAPI := v1.NewAdminAPI(s.config, s.cluster)
+    
+    // 注册路由
+	filesAPI.RegisterRoutes(apiRouter)
+	dirsAPI.RegisterRoutes(apiRouter)
+	clusterAPI.RegisterRoutes(apiRouter)
+	adminAPI.RegisterRoutes(apiRouter)
+    
+    // 公开的健康检查端点
+    httpServer.GET("/health", adminAPI.HealthCheck)
 }
