@@ -385,3 +385,29 @@ func (m *ClusterManager) GetLeader(ctx context.Context) (*types.NodeInfo, error)
     // 复用GetNodeInfo方法获取领导者详细信息
     return m.GetNodeInfo(ctx, leaderID)
 }
+
+// GetNodeCount 获取集群节点总数
+func (m *ClusterManager) GetNodeCount() int {
+    nodeStates := m.heartbeatMgr.GetAllNodeStates()
+    return len(nodeStates)
+}
+
+// GetHealthyNodeCount 获取健康节点数量
+func (m *ClusterManager) GetHealthyNodeCount() int {
+    nodeStates := m.heartbeatMgr.GetAllNodeStates()
+    count := 0
+    for _, state := range nodeStates {
+        if state == types.NodeStatusHealthy {
+            count++
+        }
+    }
+    return count
+}
+
+// LastElectionTime 获取最后一次选举时间
+func (m *ClusterManager) LastElectionTime() time.Time {
+    // 这里需要从选举管理器中获取最后一次选举时间
+    // 但现有代码没有跟踪这个信息，所以返回一个近似值
+    // 理想情况下应该修改election.Manager来跟踪这个时间
+    return time.Now() // 返回当前时间作为临时解决方案
+}

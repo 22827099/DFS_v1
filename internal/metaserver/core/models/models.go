@@ -36,7 +36,6 @@ type DirectoryMetadata struct {
 	AccessTime time.Time `db:"access_time"` // 访问时间
 }
 
-
 // ChunkMetadata 表示数据块元数据
 type ChunkMetadata struct {
 	ChunkID    int64  `db:"chunk_id"`

@@ -40,11 +40,13 @@ type Manager struct {
 	votedFor       string
 	currentLeader  string
 	lastHeartbeat  time.Time
+	lastElectionTime time.Time
 	electionTimer  *time.Timer
 	leaderChangeCh chan string
 	raftNode       *raft.RaftNode
 	transport      *RaftTransport
 	logger         logging.Logger
+	isLeader	   bool
 }
 
 // NewManager 创建选举管理器
@@ -63,6 +65,7 @@ func NewManager(cfg *Config, logger logging.Logger) (*Manager, error) {
 		state:          ElectionStateFollower,
 		currentTerm:    0,
 		lastHeartbeat:  time.Now(),
+		lastElectionTime: time.Now(), 
 		ctx:            ctx,
 		cancel:         cancel,
 		leaderChangeCh: make(chan string, 10),
@@ -178,17 +181,51 @@ func (m *Manager) LeaderChangeChan() <-chan string {
 }
 
 // 监控Raft状态变化
+// 修改 monitorRaftState 函数
 func (m *Manager) monitorRaftState() {
-	applyCh := m.raftNode.ApplyCh()
+    applyCh := m.raftNode.ApplyCh()
+    leaderCh := m.raftNode.LeaderCh() 
 
-	for {
-		select {
-		case <-m.ctx.Done():
-			return
-		case msg := <-applyCh:
-			m.handleRaftMsg(msg)
-		}
-	}
+    for {
+        select {
+        case <-m.ctx.Done():
+            return
+        case msg := <-applyCh:
+            m.handleRaftMsg(msg)
+        case isLeader := <-leaderCh:
+            // 领导者状态变更，更新选举时间
+            m.mu.Lock()
+            oldIsLeader := m.isLeader // 假设 Manager 结构体中有 isLeader 字段
+            m.isLeader = isLeader
+            
+            // 根据是否为领导者设置当前领导者ID
+            if isLeader {
+                // 如果本节点成为领导者，设置当前领导者为本节点ID
+                oldLeader := m.currentLeader
+                m.currentLeader = m.cfg.NodeID // 使用本节点ID
+                
+                if oldLeader != m.currentLeader {
+                    m.lastElectionTime = time.Now()
+                    m.logger.Info("节点成为领导者", "node_id", m.cfg.NodeID, "election_time", m.lastElectionTime)
+                    
+                    // 通知领导者变更
+                    select {
+                    case m.leaderChangeCh <- m.currentLeader:
+                        // 成功发送
+                    default:
+                        m.logger.Warn("领导者变更通道已满")
+                    }
+                }
+            } else if oldIsLeader {
+                // 如果本节点失去领导者身份，但我们不知道新领导者是谁
+                // 可以将 currentLeader 设为空或保持不变
+                m.currentLeader = "" // 或者保持不变
+                m.logger.Info("节点失去领导者身份", "node_id", m.cfg.NodeID)
+            }
+            
+            m.mu.Unlock()
+        }
+    }
 }
 
 // 处理Raft消息
@@ -232,6 +269,7 @@ func (m *Manager) becomeFollower(term uint64, leaderId string) {
 
 	// 如果领导者变化，通知变更
 	if oldLeader != leaderId {
+		m.lastElectionTime = time.Now()  // 更新选举时间
 		m.leaderChangeCh <- leaderId
 	}
 
@@ -440,4 +478,11 @@ func (t *RaftTransport) Stop() {
 // 接收消息
 func (t *RaftTransport) receiveMessage(msg raftpb.Message) {
 	t.receiveC <- msg
+}
+
+// GetLastElectionTime 获取最后一次选举时间
+func (m *Manager) GetLastElectionTime() time.Time {
+    m.mu.RLock()
+    defer m.mu.RUnlock()
+    return m.lastElectionTime
 }
