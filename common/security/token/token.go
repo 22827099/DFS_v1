@@ -3,6 +3,8 @@ package token
 import (
 	"errors"
 	"time"
+	"strings"
+	"net/http"
 )
 
 // 常见错误定义
@@ -20,4 +22,26 @@ type Maker interface {
 
 	// VerifyToken 验证令牌的有效性，并返回包含在令牌中的负载
 	VerifyToken(token string) (*Payload, error)
+}
+
+// extractTokenFromRequest 从请求中提取认证令牌
+func ExtractTokenFromRequest(r *http.Request) string {
+    // 首先尝试从Authorization头部获取
+    authHeader := r.Header.Get("Authorization")
+    if authHeader != "" {
+        // Bearer token格式
+        if strings.HasPrefix(authHeader, "Bearer ") {
+            return strings.TrimPrefix(authHeader, "Bearer ")
+        }
+        return authHeader
+    }
+    
+    // 如果头部没有，尝试从cookie获取
+    cookie, err := r.Cookie("auth_token")
+    if err == nil && cookie != nil {
+        return cookie.Value
+    }
+    
+    // 最后尝试从URL参数获取
+    return r.URL.Query().Get("token")
 }

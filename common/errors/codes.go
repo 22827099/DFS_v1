@@ -15,6 +15,7 @@ const (
 	ResourceExhausted ErrorCode = 8  // 资源耗尽
 	Unavailable       ErrorCode = 9  // 服务不可用
 	Timeout           ErrorCode = 10 // 操作超时
+	RateLimitExceeded ErrorCode = 11 // 速率限制超出
 
 	// 配置错误 (1000-1099)
 	ConfigParseError      ErrorCode = 1000 // 配置解析错误
@@ -61,6 +62,7 @@ var codeText = map[ErrorCode]string{
 	ResourceExhausted: "资源耗尽",
 	Unavailable:       "服务不可用",
 	Timeout:           "操作超时",
+	RateLimitExceeded: "速率限制超出",
 
 	ConfigParseError:      "配置解析错误",
 	ConfigValidationError: "配置验证错误",

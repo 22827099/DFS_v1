@@ -215,5 +215,3 @@ func (e *Error) MarshalJSON() ([]byte, error) {
 
 	return json.Marshal(je)
 }
-
-

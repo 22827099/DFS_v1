@@ -58,7 +58,7 @@ func (c *SimplePermissionChecker) HasPermission(ctx context.Context, user *UserI
 		}
 
 		// 检查资源是否匹配
-		if matchResourcePattern(resource, rule.Pattern) {
+		if MatchResourcePattern(resource, rule.Pattern) {
 			// 检查操作是否匹配
 			for _, allowedAction := range rule.Actions {
 				if allowedAction == "*" || allowedAction == action {
@@ -80,7 +80,7 @@ func (c *SimplePermissionChecker) GetUserPermissions(ctx context.Context, user *
 }
 
 // matchResourcePattern 检查资源是否匹配模式
-func matchResourcePattern(resource, pattern string) bool {
+func MatchResourcePattern(resource, pattern string) bool {
 	if pattern == "*" {
 		return true
 	}
@@ -92,4 +92,21 @@ func matchResourcePattern(resource, pattern string) bool {
 	}
 
 	return resource == pattern
+}
+
+// GetActionFromMethod 将HTTP方法映射为标准权限操作
+// GET -> read, POST -> create, PUT/PATCH -> update, DELETE -> delete
+func GetActionFromMethod(method string) string {
+    switch method {
+    case "GET":
+        return "read"
+    case "POST":
+        return "create"
+    case "PUT", "PATCH":
+        return "update"
+    case "DELETE":
+        return "delete"
+    default:
+        return "read"
+    }
 }

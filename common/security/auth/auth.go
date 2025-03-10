@@ -116,3 +116,8 @@ func GetUserFromContext(ctx context.Context) (*UserInfo, bool) {
 	user, ok := ctx.Value(userContextKey).(*UserInfo)
 	return user, ok
 }
+
+// WithUserContext 将用户信息添加到请求上下文中
+func WithUserContext(ctx context.Context, user *UserInfo) context.Context {
+    return context.WithValue(ctx, userContextKey, user)
+}
