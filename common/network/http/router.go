@@ -23,11 +23,19 @@ type RouteGroup interface {
     PUT(path string, handler Handler)
     DELETE(path string, handler Handler)
     Group(prefix string) RouteGroup
+    Use(middleware ...Middleware) // 添加 Use 方法到接口
 }
 
 // routerImpl 实现Router接口
 type routerImpl struct {
     router *mux.Router
+}
+
+// routeGroupImpl 实现RouteGroup接口
+type routeGroupImpl struct {
+    prefix string
+    router *routerImpl
+    middlewares []Middleware
 }
 
 // NewRouter 创建新的路由器
@@ -70,12 +78,6 @@ func (r *routerImpl) Group(prefix string) RouteGroup {
     }
 }
 
-// routeGroupImpl 实现RouteGroup接口
-type routeGroupImpl struct {
-    prefix string
-    router *routerImpl
-}
-
 // GET 在组内注册GET请求处理器
 func (g *routeGroupImpl) GET(path string, handler Handler) {
     g.router.GET(g.prefix+path, handler)
@@ -103,3 +105,10 @@ func (g *routeGroupImpl) Group(prefix string) RouteGroup {
         router: g.router,
     }
 }
+
+// 添加Use方法支持
+func (rg *routeGroupImpl) Use(middleware ...Middleware) {
+    rg.middlewares = append(rg.middlewares, middleware...)
+}
+
+
