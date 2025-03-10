@@ -1,26 +1,29 @@
 package http
 
-// Response 表示标准API响应
-type Response struct {
-    Success bool        `json:"success"`
-    Data    interface{} `json:"data,omitempty"`
-    Error   string      `json:"error,omitempty"`
-    Code    int         `json:"code,omitempty"`
+import "net/http"
+
+// RequestOption 表示HTTP请求选项
+type RequestOption func(*http.Request)
+
+// WithHeader 添加请求头选项
+func WithHeader(key, value string) RequestOption {
+	return func(req *http.Request) {
+		req.Header.Set(key, value)
+	}
 }
 
-// SuccessResponse 创建成功响应
-func SuccessResponse(data interface{}) Response {
-    return Response{
-        Success: true,
-        Data:    data,
-    }
+// WithQueryParam 添加查询参数选项
+func WithQueryParam(key, value string) RequestOption {
+	return func(req *http.Request) {
+		q := req.URL.Query()
+		q.Add(key, value)
+		req.URL.RawQuery = q.Encode()
+	}
 }
 
-// ErrorResponse 创建错误响应
-func ErrorResponse(message string, code int) Response {
-    return Response{
-        Success: false,
-        Error:   message,
-        Code:    code,
-    }
+// WithBasicAuth 添加基本认证选项
+func WithBasicAuth(username, password string) RequestOption {
+	return func(req *http.Request) {
+		req.SetBasicAuth(username, password)
+	}
 }

@@ -21,4 +21,5 @@ type SystemConfig struct {
     Replicas   int           `yaml:"replicas" json:"replicas" toml:"replicas" env:"REPLICAS" default:"2"`
     Logging    LoggingConfig `yaml:"logging" json:"logging" toml:"logging"`
     Cluster config.ClusterConfig `json:"cluster" json:"cluster" toml:"cluster"`
+    Version   string        `json:"version"`
 }

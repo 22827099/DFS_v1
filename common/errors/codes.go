@@ -25,21 +25,31 @@ const (
 	ConnectionError ErrorCode = 1101 // 连接错误
 
 	// 存储错误 (1200-1299)
-	StorageError   ErrorCode = 1200 // 存储通用错误
-	DataCorruption ErrorCode = 1201 // 数据损坏
+	StorageError      ErrorCode = 1200 // 存储通用错误
+	DataCorruption    ErrorCode = 1201 // 数据损坏
+	FileNotFound      ErrorCode = 1210 // 文件不存在
+	FileAlreadyExists ErrorCode = 1211 // 文件已存在
+	QuotaExceeded     ErrorCode = 1212 // 配额超出
 
 	// 一致性错误 (1300-1399)
 	ConsensusError    ErrorCode = 1300 // 共识错误
 	QuorumNotAchieved ErrorCode = 1301 // 未达到法定人数
-	
 
 	// 安全错误 (1400-1499)
 	SecurityError       ErrorCode = 1400 // 安全通用错误
 	CryptoError         ErrorCode = 1401 // 加密/解密错误
 	AuthenticationError ErrorCode = 1402 // 认证错误
 	TokenError          ErrorCode = 1403 // 令牌错误
+
+	// 分布式系统错误 (1500-1599)
+	RPCFailure        ErrorCode = 1500 // RPC调用失败
+	NodeUnavailable   ErrorCode = 1501 // 节点不可用
+	ConsistencyFailed ErrorCode = 1502 // 一致性检查失败
+	ReplicationFailed ErrorCode = 1503 // 副本复制失败
+	PartitionError    ErrorCode = 1504 // 分区错误
 )
 
+// 错误码对应的文本描述映射
 var codeText = map[ErrorCode]string{
 	Unknown:           "未知错误",
 	Internal:          "内部系统错误",
@@ -58,8 +68,11 @@ var codeText = map[ErrorCode]string{
 	NetworkError:    "网络错误",
 	ConnectionError: "连接错误",
 
-	StorageError:   "存储错误",
-	DataCorruption: "数据损坏",
+	StorageError:      "存储错误",
+	DataCorruption:    "数据损坏",
+	FileNotFound:      "文件不存在",
+	FileAlreadyExists: "文件已存在",
+	QuotaExceeded:     "配额超出",
 
 	ConsensusError:    "共识错误",
 	QuorumNotAchieved: "未达到法定人数",
@@ -68,6 +81,12 @@ var codeText = map[ErrorCode]string{
 	CryptoError:         "加密/解密错误",
 	AuthenticationError: "认证错误",
 	TokenError:          "令牌错误",
+
+	RPCFailure:        "RPC调用失败",
+	NodeUnavailable:   "节点不可用",
+	ConsistencyFailed: "一致性检查失败",
+	ReplicationFailed: "副本复制失败",
+	PartitionError:    "分区错误",
 }
 
 // Text 返回错误码对应的文本描述
@@ -77,25 +96,3 @@ func (e ErrorCode) Text() string {
 	}
 	return codeText[Unknown]
 }
-
-// 错误码分类
-const (
-	// 客户端错误 (1000-1999)
-	ErrFileNotFound      = 1001 // 文件不存在
-	ErrPermission        = 1002 // 权限错误
-	ErrInvalidArgument   = 1003 // 参数无效
-	ErrFileAlreadyExists = 1004 // 文件已存在
-	ErrQuotaExceeded     = 1005 // 配额超出
-
-	// 服务端错误 (2000-2999)
-	ErrRPCFailure        = 2001 // RPC调用失败
-	ErrInternalStorage   = 2002 // 存储错误
-	ErrDatabaseError     = 2003 // 数据库错误
-	ErrResourceExhausted = 2004 // 资源耗尽
-
-	// 分布式系统特有错误 (3000-3999)
-	ErrNodeUnavailable   = 3001 // 节点不可用
-	ErrConsistencyFailed = 3002 // 一致性检查失败
-	ErrReplicationFailed = 3003 // 副本复制失败
-	ErrPartitionError    = 3004 // 分区错误
-)

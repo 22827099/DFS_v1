@@ -81,19 +81,6 @@ func (s *Server) SetIdleTimeout(timeout time.Duration) {
 	s.idleTimeout = timeout
 }
 
-// // buildHandler 构建处理器链
-// func (s *Server) buildHandler() http.Handler {
-//     // 从路由器开始
-//     var handler http.Handler = s.router
-    
-//     // 应用所有中间件
-//     for i := len(s.middlewares) - 1; i >= 0; i-- {
-//         handler = s.middlewares[i](handler)
-//     }
-    
-//     return handler
-// }
-
 // Start 启动HTTP服务器
 func (s *Server) Start() error {
 	s.server = &http.Server{
@@ -177,6 +164,9 @@ func RespondJSON(w http.ResponseWriter, status int, data interface{}) error {
 func RespondError(w http.ResponseWriter, status int, message string) error {
 	return RespondJSON(w, status, map[string]string{"error": message})
 }
+
+// RespondRecorder 是一个用于记录响应的响应写入器
+
 
 // ServerOption 服务器配置选项
 type ServerOption func(*Server)

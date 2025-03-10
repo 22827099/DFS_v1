@@ -30,12 +30,6 @@ type routerImpl struct {
     router *mux.Router
 }
 
-// // routeGroup 实现RouteGroup接口
-// type routeGroup struct {
-// 	prefix string
-// 	router *routerImpl
-// }
-
 // NewRouter 创建新的路由器
 func NewRouter() Router {
     return &routerImpl{

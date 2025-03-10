@@ -12,19 +12,20 @@ import (
 
 // RaftNode 封装etcd/raft库，提供简化的接口
 type RaftNode struct {
-	config       *Config
-	node         etcdraft.Node
-	raftStorage  *MemoryStorage
-	applyCh      chan ApplyMsg
-	transport    Transport
-	done         chan struct{}
-	stopOnce     sync.Once
-	proposeC     chan []byte
-	confChangeC  chan raftpb.ConfChange
-	commitC      chan *commit
-	readyHandler *readyHandler
-	mu           sync.RWMutex
-	isLeader     bool
+    mu          sync.RWMutex          // 读写锁
+    isLeader    bool                  // 是否为领导者
+    config      *Config               // 配置
+    node        etcdraft.Node         // etcd/raft 节点
+    raftStorage *MemoryStorage        // 内存存储
+    transport   Transport             // 网络传输接口
+    readyHandler *readyHandler        // Ready对象处理器
+    applyCh     chan ApplyMsg         // 应用通道，用于接收已提交的日志条目
+    leaderCh    chan bool             // 通知领导者变更
+    proposeC    chan []byte           // 提案通道
+    confChangeC chan raftpb.ConfChange // 配置变更通道
+    commitC     chan *commit           // 提交通道
+    done        chan struct{}          // 停止信号
+    stopOnce    sync.Once              // 确保停止操作只执行一次
 }
 
 
@@ -150,6 +151,11 @@ func (rn *RaftNode) IsLeader() bool {
 // ApplyCh 返回应用通道，用于接收已提交的日志条目
 func (rn *RaftNode) ApplyCh() <-chan ApplyMsg {
 	return rn.applyCh
+}
+
+// LeaderCh 返回领导者变更通知通道
+func (rn *RaftNode) LeaderCh() <-chan bool {
+    return rn.leaderCh
 }
 
 // readyHandler 处理Ready对象
