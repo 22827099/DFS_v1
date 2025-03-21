@@ -1,281 +1,179 @@
 package logging
 
 import (
-	"fmt"
-	"io"
-	"log"
-	"os"
-	"sync"
-	"time"
+    "io"
+    "sync"
 )
 
-type LogLevel int
-
-const (
-	DEBUG LogLevel = iota
-	INFO
-	WARN
-	ERROR
-	FATAL
+// 全局日志记录器实例
+var (
+    std         Logger
+    loggers     = make(map[string]Logger)
+    loggerMutex sync.RWMutex
 )
 
-// Logger 定义日志记录器接口
-type Logger interface {
-	Debug(format string, args ...interface{})
-	Info(format string, args ...interface{})
-	Warn(format string, args ...interface{})
-	Error(format string, args ...interface{})
-	Fatal(format string, args ...interface{})
-	SetLevel(level LogLevel)
-	SetOutput(w io.Writer)
-	WithContext(ctx map[string]interface{}) Logger
+// LoggerFactory 接口的实现
+type defaultLoggerFactory struct {
+    defaultOptions []Option
 }
 
-// DefaultLogger 默认日志实现
-type DefaultLogger struct {
-	level     LogLevel
-	output    io.Writer
-	mu        sync.Mutex
-	formatter Formatter
+// 全局工厂实例
+var factory LoggerFactory = &defaultLoggerFactory{
+    defaultOptions: []Option{
+        WithLevel(LevelInfo),
+        WithConsoleFormat(),
+        WithCaller(true),
+        WithCallerSkip(1),
+        WithColors(true),
+    },
 }
 
-// WithContext 创建带有上下文的日志记录器
-func (l *DefaultLogger) WithContext(ctx map[string]interface{}) Logger {
-	// 创建新的日志记录器，复制原始记录器的设置
-	newLogger := &DefaultLogger{
-		level:     l.level,
-		output:    l.output,
-		formatter: l.formatter,
-	}
-
-	// 如果原始格式化器支持上下文，则设置上下文
-	if contextFormatter, ok := newLogger.formatter.(ContextFormatter); ok {
-		contextFormatter = contextFormatter.WithContext(ctx)
-		newLogger.formatter = contextFormatter
-	}
-
-	return newLogger
+// 初始化标准日志记录器
+func init() {
+    std = NewLogger()
 }
 
-// ContextFormatter 扩展基本的Formatter，支持上下文信息
-type ContextFormatter interface {
-	Formatter
-	WithContext(ctx map[string]interface{}) ContextFormatter
+// Debug 输出调试级别日志
+func Debug(format string, args ...interface{}) {
+    std.Debug(format, args...)
 }
 
-// WithContext 创建带有上下文的格式化器
-func (f *DefaultFormatter) WithContext(ctx map[string]interface{}) ContextFormatter {
-	newFormatter := &DefaultFormatter{
-		context: make(map[string]interface{}, len(f.context)+len(ctx)),
-	}
+// Info 输出信息级别日志
+func Info(format string, args ...interface{}) {
+    std.Info(format, args...)
+}
 
-	// 复制现有上下文
-	for k, v := range f.context {
-		newFormatter.context[k] = v
-	}
+// Warn 输出警告级别日志
+func Warn(format string, args ...interface{}) {
+    std.Warn(format, args...)
+}
 
-	// 添加新上下文
-	for k, v := range ctx {
-		newFormatter.context[k] = v
-	}
+// Error 输出错误级别日志
+func Error(format string, args ...interface{}) {
+    std.Error(format, args...)
+}
 
-	return newFormatter
+// Fatal 输出致命错误日志
+func Fatal(format string, args ...interface{}) {
+    std.Fatal(format, args...)
+}
+
+// Log 输出指定级别日志
+func Log(level LogLevel, format string, args ...interface{}) {
+    std.Log(level, format, args...)
+}
+
+// LogWithFields 输出带有字段的日志
+func LogWithFields(level LogLevel, msg string, fields map[string]interface{}) {
+    std.LogWithFields(level, msg, fields)
 }
 
 // NewLogger 创建新的日志记录器
-func NewLogger() Logger {
-	return &DefaultLogger{
-		level:     INFO,
-		output:    os.Stdout,
-		formatter: NewDefaultFormatter(),
-	}
+func NewLogger(options ...Option) Logger {
+    // 创建基本配置
+    config := NewLogConfig()
+    
+    // 应用全局默认选项
+    for _, option := range factory.(*defaultLoggerFactory).defaultOptions {
+        option(config)
+    }
+    
+    // 应用自定义选项
+    for _, option := range options {
+        option(config)
+    }
+    
+    // 创建日志记录器
+    return NewZapLogger(config)
 }
 
-// defaultLogger 提供基本的日志实现
-type defaultLogger struct {
-	name   string
-	logger *log.Logger
-	level  LogLevel
+// CreateLogger 创建日志记录器
+func (f *defaultLoggerFactory) CreateLogger(name string, options ...Option) Logger {
+    // 先检查缓存
+    loggerMutex.RLock()
+    if logger, ok := loggers[name]; ok {
+        loggerMutex.RUnlock()
+        return logger
+    }
+    loggerMutex.RUnlock()
+    
+    // 不存在，创建新的
+    allOptions := append([]Option{WithTag("logger", name)}, options...)
+    logger := NewLogger(allOptions...)
+    
+    // 添加到缓存
+    loggerMutex.Lock()
+    loggers[name] = logger
+    loggerMutex.Unlock()
+    
+    return logger
 }
-// GetLogger 返回指定名称的日志记录器，如果不存在则创建新的
+
+// GetLogger 获取指定名称的日志记录器
 func GetLogger(name string) Logger {
-	loggerMutex.Lock()
-	defer loggerMutex.Unlock()
-
-	if logger, exists := loggers[name]; exists {
-		return logger
-	}
-
-	// 创建新的日志记录器
-	logger := &defaultLogger{
-		name:   name,
-		logger: log.New(os.Stdout, fmt.Sprintf("[%s] ", name), log.LstdFlags),
-		level:  INFO,
-	}
-	loggers[name] = logger
-	return logger
+    return factory.CreateLogger(name)
 }
 
-// Debug 实现Logger接口的Debug方法
-func (l *defaultLogger) Debug(format string, args ...interface{}) {
-	if l.level <= DEBUG {
-		l.logger.Printf("DEBUG: "+format, args...)
-	}
+// SetLoggerFactory 设置全局日志工厂
+func SetLoggerFactory(f LoggerFactory) {
+    if f != nil {
+        factory = f
+    }
 }
 
-// Info 实现Logger接口的Info方法
-func (l *defaultLogger) Info(format string, args ...interface{}) {
-	if l.level <= INFO {
-		l.logger.Printf("INFO: "+format, args...)
-	}
+// SetDefaultOptions 设置全局默认选项
+func SetDefaultOptions(options ...Option) {
+    if factory, ok := factory.(*defaultLoggerFactory); ok {
+        factory.defaultOptions = options
+    }
 }
 
-// Warn 实现Logger接口的Warn方法
-func (l *defaultLogger) Warn(format string, args ...interface{}) {
-	if l.level <= WARN {
-		l.logger.Printf("WARN: "+format, args...)
-	}
+// SetGlobalLevel 设置全局默认日志级别
+func SetGlobalLevel(level LogLevel) {
+    if l, ok := std.(*ZapLogger); ok {
+        l.SetLevel(level)
+    }
+    
+    // 更新所有已创建的日志记录器
+    loggerMutex.RLock()
+    defer loggerMutex.RUnlock()
+    
+    for _, logger := range loggers {
+        if l, ok := logger.(*ZapLogger); ok {
+            l.SetLevel(level)
+        }
+    }
 }
 
-// Error 实现Logger接口的Error方法
-func (l *defaultLogger) Error(format string, args ...interface{}) {
-	if l.level <= ERROR {
-		l.logger.Printf("ERROR: "+format, args...)
-	}
+// SetGlobalOutput 设置全局输出
+func SetGlobalOutput(w io.Writer) {
+    if l, ok := std.(*ZapLogger); ok {
+        l.SetOutput(w)
+    }
+    
+    // 更新所有已创建的日志记录器
+    loggerMutex.RLock()
+    defer loggerMutex.RUnlock()
+    
+    for _, logger := range loggers {
+        if l, ok := logger.(*ZapLogger); ok {
+            l.SetOutput(w)
+        }
+    }
 }
 
-// Fatal 实现Logger接口的Fatal方法
-func (l *defaultLogger) Fatal(format string, args ...interface{}) {
-	if l.level <= FATAL {
-		l.logger.Printf("FATAL: "+format, args...)
-		os.Exit(1)
-	}
-}
-
-// SetLevel 实现Logger接口的SetLevel方法
-func (l *defaultLogger) SetLevel(level LogLevel) {
-	l.level = level
-}
-
-// SetOutput 实现Logger接口的SetOutput方法
-func (l *defaultLogger) SetOutput(w io.Writer) {
-	l.logger.SetOutput(w)
-}
-
-// WithContext 实现Logger接口的WithContext方法
-func (l *defaultLogger) WithContext(ctx map[string] interface{}) Logger {
-	// 简单实现，实际可能需要更复杂的处理
-	newLogger := &defaultLogger{
-		name:   l.name,
-		logger: l.logger,
-		level:  l.level,
-	}
-	return newLogger
-}
-
-// SetFormatter 设置日志格式化器
-func (l *DefaultLogger) SetFormatter(formatter Formatter) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	l.formatter = formatter
-}
-
-// SetLevel 设置日志级别
-func (l *DefaultLogger) SetLevel(level LogLevel) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	l.level = level
-}
-
-// SetOutput 设置日志输出
-func (l *DefaultLogger) SetOutput(w io.Writer) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	l.output = w
-}
-
-// 全局日志实例
-var DefaultLoggerInstance = &DefaultLogger{
-	level:     INFO,
-	output:    os.Stdout,
-	formatter: NewDefaultFormatter(),
-}
-
-// 全局日志变量声明
-var (
-	loggerMutex sync.Mutex
-	loggers     = make(map[string]Logger)
-)
-
-// log 内部日志方法
-func (l *DefaultLogger) log(level LogLevel, format string, args ...interface{}) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-
-	if level < l.level {
-		return
-	}
-
-	entry := &LogEntry{
-		Time:    time.Now(),
-		Level:   level,
-		Message: fmt.Sprintf(format, args...),
-	}
-
-	formatted := l.formatter.Format(entry)
-	fmt.Fprintln(l.output, formatted)
-
-	// 如果是致命错误，程序退出
-	if level == FATAL {
-		os.Exit(1)
-	}
-}
-
-// Debug 记录调试日志
-func (l *DefaultLogger) Debug(format string, args ...interface{}) {
-	l.log(DEBUG, format, args...)
-}
-
-// Info 记录信息日志
-func (l *DefaultLogger) Info(format string, args ...interface{}) {
-	l.log(INFO, format, args...)
-}
-
-// Warn 记录警告日志
-func (l *DefaultLogger) Warn(format string, args ...interface{}) {
-	l.log(WARN, format, args...)
-}
-
-// Error 记录错误日志
-func (l *DefaultLogger) Error(format string, args ...interface{}) {
-	l.log(ERROR, format, args...)
-}
-
-// Fatal 记录致命错误日志
-func (l *DefaultLogger) Fatal(format string, args ...interface{}) {
-	l.log(FATAL, format, args...)
-}
-
-// 全局日志实例
-var std = NewLogger()
-
-// 提供全局日志方法
-func Debug(format string, args ...interface{}) {
-	std.Debug(format, args...)
-}
-
-func Info(format string, args ...interface{}) {
-	std.Info(format, args...)
-}
-
-func Warn(format string, args ...interface{}) {
-	std.Warn(format, args...)
-}
-
-func Error(format string, args ...interface{}) {
-	std.Error(format, args...)
-}
-
-func Fatal(format string, args ...interface{}) {
-	std.Fatal(format, args...)
+// SyncAll 刷新所有日志缓冲
+func SyncAll() {
+    if l, ok := std.(*ZapLogger); ok {
+        l.Sync()
+    }
+    
+    loggerMutex.RLock()
+    defer loggerMutex.RUnlock()
+    
+    for _, logger := range loggers {
+        if l, ok := logger.(*ZapLogger); ok {
+            l.Sync()
+        }
+    }
 }

@@ -1,85 +1,106 @@
 package logging
 
 import (
-	"fmt"
-	"time"
+    "encoding/json"
+    "fmt"
+    "time"
 )
 
-// LogEntry 表示一条日志条目
-type LogEntry struct {
-	Time    time.Time
-	Level   LogLevel
-	Message string
+// TextFormatter 文本格式化器
+type TextFormatter struct {
+    TimeFormat string
+    Colors     bool
 }
 
-// Formatter 日志格式化接口
-type Formatter interface {
-	Format(entry *LogEntry) string
-}
-
-// DefaultFormatter 默认格式化器
-type DefaultFormatter struct {
-	TimeFormat string
-	Colors     bool
-	context map[string]interface{} // 添加这个字段，以便在格式化器中使用上下文
-}
-
-// 颜色常量
-const (
-	colorReset  = "\033[0m"
-	colorRed    = "\033[31m"
-	colorGreen  = "\033[32m"
-	colorYellow = "\033[33m"
-	colorBlue   = "\033[34m"
-	colorPurple = "\033[35m"
-)
-
-// NewDefaultFormatter 创建默认格式化器
-func NewDefaultFormatter() Formatter {
-	return &DefaultFormatter{
-		TimeFormat: "2006-01-02 15:04:05",
-		Colors:     true,
-	}
+// NewTextFormatter 创建新的文本格式化器
+func NewTextFormatter() Formatter {
+    return &TextFormatter{
+        TimeFormat: "2006-01-02 15:04:05.000",
+        Colors:     true,
+    }
 }
 
 // Format 格式化日志条目
-func (f *DefaultFormatter) Format(entry *LogEntry) string {
-	levelName := levelNames[entry.Level]
-	timeStr := entry.Time.Format(f.TimeFormat)
-
-	if !f.Colors {
-		return fmt.Sprintf("[%s] [%s] %s", timeStr, levelName, entry.Message)
-	}
-
-	// 为不同级别使用不同颜色
-	var colorCode string
-	switch entry.Level {
-	case DEBUG:
-		colorCode = colorBlue
-	case INFO:
-		colorCode = colorGreen
-	case WARN:
-		colorCode = colorYellow
-	case ERROR, FATAL:
-		colorCode = colorRed
-	}
-
-	return fmt.Sprintf("[%s] %s[%s]%s %s", timeStr, colorCode, levelName, colorReset, entry.Message)
+func (f *TextFormatter) Format(entry *LogEntry) string {
+    levelName := LevelToString(entry.Level)
+    timeStr := time.Unix(0, entry.Timestamp).Format(f.TimeFormat)
+    
+    var colorCode, resetCode string
+    if f.Colors {
+        colorCode = levelColors[entry.Level]
+        resetCode = colorReset
+    }
+    
+    // 基本部分
+    output := fmt.Sprintf("[%s] %s%s%s %s", 
+        timeStr, 
+        colorCode, 
+        levelName, 
+        resetCode,
+        entry.Message)
+    
+    // 添加字段
+    if len(entry.Fields) > 0 {
+        output += " "
+        for k, v := range entry.Fields {
+            output += fmt.Sprintf("%s=%v ", k, v)
+        }
+    }
+    
+    // 添加调用者信息
+    if entry.Caller != "" {
+        output += fmt.Sprintf(" (%s)", entry.Caller)
+    }
+    
+    return output
 }
 
 // JSONFormatter JSON格式化器
-type JSONFormatter struct{}
+type JSONFormatter struct {
+    TimeFormat string
+    Pretty     bool
+}
 
-// NewJSONFormatter 创建JSON格式化器
+// NewJSONFormatter 创建新的JSON格式化器
 func NewJSONFormatter() Formatter {
-	return &JSONFormatter{}
+    return &JSONFormatter{
+        TimeFormat: time.RFC3339Nano,
+        Pretty:     false,
+    }
 }
 
 // Format 以JSON格式输出日志
 func (f *JSONFormatter) Format(entry *LogEntry) string {
-	return fmt.Sprintf(`{"time":"%s","level":"%s","message":"%s"}`,
-		entry.Time.Format(time.RFC3339),
-		levelNames[entry.Level],
-		entry.Message,
-	)
+    data := map[string]interface{}{
+        "time":    time.Unix(0, entry.Timestamp).Format(f.TimeFormat),
+        "level":   LevelToString(entry.Level),
+        "message": entry.Message,
+    }
+    
+    // 添加字段
+    for k, v := range entry.Fields {
+        if _, exists := data[k]; !exists {
+            data[k] = v
+        }
+    }
+    
+    // 添加调用者信息
+    if entry.Caller != "" {
+        data["caller"] = entry.Caller
+    }
+    
+    var output []byte
+    var err error
+    
+    if f.Pretty {
+        output, err = json.MarshalIndent(data, "", "  ")
+    } else {
+        output, err = json.Marshal(data)
+    }
+    
+    if err != nil {
+        return fmt.Sprintf("{\"error\":\"json格式化失败: %v\", \"message\":\"%s\"}", err, entry.Message)
+    }
+    
+    return string(output)
 }
