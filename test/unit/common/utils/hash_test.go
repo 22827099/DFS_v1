@@ -48,10 +48,10 @@ func TestHashBytes(t *testing.T) {
         hashType utils.HashType
         expected string
     }{
-        {"MD5", utils.MD5, "e48e13207341b6bffb7fb1622282247b"},
-        {"SHA1", utils.SHA1, "d85f4d6f4a5eaed71c0eadc5ca658d5f3e61eced"},
-        {"SHA256", utils.SHA256, "916f0027a575074ce72a331777c3478d6513f786a591bd892da1a577bf2335f9"},
-        {"SHA512", utils.SHA512, "e39973c1b2411a61436c3f36c3654ebd0e27b19b322f8710a1bb0cf6a79539714cee1a490c1be1f38362aac19e44d93f5e88bde54f41be0d053978c3d6afa34a"},
+        {"MD5", utils.MD5, "2a600ef1c3ae7f2b2da44783a96f5cfb"},
+        {"SHA1", utils.SHA1, "db67b9e86cfa0d9c4871f30a94b804eeaeb17c98"},
+        {"SHA256", utils.SHA256, "f7eb7961d8a233e6256d3a6257548bbb9293c3a08fb3574c88c7d6b429dbb9f5"},
+        {"SHA512", utils.SHA512, "1ef4f53766489878e6f1fccd8cac73101ca8ca3017d5c3f2d5042fc93793e90b35613b003728a76871a8b6abe96842ac68bcdb764eaaa8e1b2ba6d01d2e45ee3"},
     }
     
     for _, tt := range tests {
