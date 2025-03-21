@@ -2,13 +2,14 @@ package config
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/ioutil"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strconv"
 	"strings"
-	"io/ioutil"
 
 	"github.com/BurntSushi/toml"
 	"gopkg.in/yaml.v3"
@@ -88,6 +89,11 @@ func LoadConfig(path string) (*SystemConfig, error) {
 		return nil, err
 	}
 
+	// 处理配置
+	if err := processConfig(config); err != nil {
+		return nil, err
+	}
+
 	return config, nil
 }
 
@@ -120,6 +126,11 @@ func LoadConfigJSON(path string) (*SystemConfig, error) {
 
 	// 验证配置
 	if err := ValidateConfig(config); err != nil {
+		return nil, err
+	}
+
+	// 处理配置
+	if err := processConfig(config); err != nil {
 		return nil, err
 	}
 
@@ -162,6 +173,11 @@ func LoadConfigTOML(path string) (*SystemConfig, error) {
 
 	// 验证配置
 	if err := ValidateConfig(config); err != nil {
+		return nil, err
+	}
+
+	// 处理配置
+	if err := processConfig(config); err != nil {
 		return nil, err
 	}
 
@@ -261,8 +277,6 @@ func loadEnvVars(val reflect.Value) error {
 	return nil
 }
 
-
-
 // DisableEnvOverrideForTests 禁用环境变量覆盖（测试用）
 func DisableEnvOverrideForTests() {
 	skipEnvOverrideForTests = true
@@ -309,9 +323,20 @@ func applyDefaults(val reflect.Value) {
 	}
 }
 
-
-
 // isZeroValue 判断值是否为零值
 func isZeroValue(v reflect.Value) bool {
 	return v.Interface() == reflect.Zero(v.Type()).Interface()
+}
+
+// 在解析完配置后，确保NodeID转换为正确的类型
+func processConfig(cfg *SystemConfig) error {
+	// 如果从yaml/json解析出来的是string类型，
+	// 这里已经自动转换为types.NodeID，因为底层都是string
+
+	// 确保NodeID不为空
+	if cfg.NodeID.IsEmpty() {
+		return errors.New("节点ID不能为空")
+	}
+
+	return nil
 }

@@ -98,6 +98,11 @@ func ValidateConfig(config *SystemConfig) error {
 		return fmt.Errorf("配置校验失败: %v", err)
 	}
 
+	// 在config包的ValidateConfig函数中添加
+	if config.NodeID == "" {
+		return fmt.Errorf("节点ID不能为空")
+	}
+
 	// 执行自定义业务规则验证
 	if config.ChunkSize < 512 {
 		return fmt.Errorf("块大小不能小于512字节")

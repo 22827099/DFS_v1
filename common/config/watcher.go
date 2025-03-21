@@ -2,76 +2,86 @@ package config
 
 import (
 	"fmt"
+	"log"
+	"os"
 	"time"
 )
 
 // ConfigWatcher 配置监视器
 type ConfigWatcher struct {
-	ConfigPath string
-	Config     *SystemConfig
-	onChange   func(*SystemConfig)
-	stopChan   chan struct{}
+	configFile string              // 配置文件路径
+	lastMod    time.Time           // 最后修改时间
+	callback   func(*SystemConfig) // 配置更新回调
+	stopChan   chan struct{}       // 停止信号通道
+	interval   time.Duration       // 检查间隔
 }
 
-// NewConfigWatcher 创建新的配置监视器
-func NewConfigWatcher(path string, onChange func(*SystemConfig)) (*ConfigWatcher, error) {
-	watcher := &ConfigWatcher{
-		ConfigPath: path,
-		onChange:   onChange,
-		stopChan:   make(chan struct{}),
-	}
+const defaultWatchInterval = 30 * time.Second
 
-	// 初始加载配置
-	config, err := LoadConfigAuto(path)
+// 在config包中定义接口
+type Reloadable interface {
+	ForceReload() error
+}
+
+// NewConfigWatcher 创建一个配置文件观察器
+// 参数: configFile - 配置文件路径, callback - 配置变更回调
+// 返回: 配置观察器实例, 错误信息
+func NewConfigWatcher(configFile string, callback func(*SystemConfig)) (*ConfigWatcher, error) {
+	info, err := os.Stat(configFile)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("无法获取配置文件信息: %w", err)
 	}
 
-	watcher.Config = config
-
-	return watcher, nil
+	return &ConfigWatcher{
+		configFile: configFile,
+		callback:   callback,
+		stopChan:   make(chan struct{}),
+		interval:   defaultWatchInterval,
+		lastMod:    info.ModTime(),
+	}, nil
 }
 
-// Start 开始监视配置文件变化
-func (w *ConfigWatcher) Start() {
+// Start 开始监视配置文件变更
+func (cw *ConfigWatcher) Start() {
 	go func() {
-		ticker := time.NewTicker(30 * time.Second) // 定期检查
+		ticker := time.NewTicker(cw.interval)
 		defer ticker.Stop()
 
 		for {
 			select {
 			case <-ticker.C:
-				w.checkAndReload()
-			case <-w.stopChan:
+				if err := cw.checkAndReload(); err != nil {
+					// 记录错误但继续运行
+					log.Printf("配置重载错误: %v", err)
+				}
+			case <-cw.stopChan:
 				return
 			}
 		}
 	}()
 }
 
-// Stop 停止监视
-func (w *ConfigWatcher) Stop() {
-	close(w.stopChan)
+// Stop 停止监视配置文件
+func (cw *ConfigWatcher) Stop() {
+	close(cw.stopChan)
 }
 
-// checkAndReload 检查并重新加载配置
-func (w *ConfigWatcher) checkAndReload() {
-	if w.ConfigPath == "" {
-		return // 避免路径为空
-	}
+// ForceReload 强制重新加载配置
+func (cw *ConfigWatcher) ForceReload() error {
+    // 实现强制重新加载配置的逻辑
+    return cw.checkAndReload() // 或类似的内部方法
+}
 
-	// 使用 LoadConfigAuto 代替手动分派
-	config, err := LoadConfigAuto(w.ConfigPath)
+// checkAndReload 检查配置文件是否变化并重新加载
+func (cw *ConfigWatcher) checkAndReload() error {
+	info, err := os.Stat(cw.configFile)
 	if err != nil {
-		fmt.Printf("重新加载配置失败: %v\n", err)
-		return
+		return err
 	}
 
-	// 使用正确的相等比较
-	if !configEquals(w.Config, config) {
-		w.Config = config
-		if w.onChange != nil {
-			w.onChange(config)
-		}
+	if !info.ModTime().After(cw.lastMod) {
+		return nil
 	}
+
+	return cw.ForceReload()
 }
