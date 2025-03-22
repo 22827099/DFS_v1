@@ -1,36 +1,50 @@
 package http
 
 import (
-	"context"
-	"encoding/json"
-	"io"
-	"net/http"
-	"strings"
-	"time"
     "bytes"
+    "context"
+    "encoding/json"
     "fmt"
-
-	"github.com/22827099/DFS_v1/common/errors"
+    "io"
+    "net/http"
+    "time"
 )
 
 // Client 是HTTP客户端的简单封装
 type Client struct {
-	baseURL    string
-	httpClient *http.Client
-    headers     map[string]string
-    retryPolicy *RetryPolicy  // 添加重试策略字段
+    baseURL    string
+    httpClient *http.Client
+    retryPolicy *RetryPolicy
+}
+
+// ClientOption 定义客户端选项函数
+type ClientOption func(*Client)
+
+// RetryPolicy 定义HTTP请求重试策略
+type RetryPolicy struct {
+    MaxRetries    int
+    RetryInterval time.Duration
+    MaxBackoff    time.Duration
+    ShouldRetry   func(*http.Response, error) bool
 }
 
 // NewClient 创建新的HTTP客户端
 func NewClient(baseURL string, options ...ClientOption) *Client {
     client := &Client{
-        httpClient:  &http.Client{},
-        baseURL:     baseURL,
-        headers:     make(map[string]string),
-        retryPolicy: DefaultRetryPolicy(),  // 设置默认重试策略
+        httpClient: &http.Client{
+            Timeout: 30 * time.Second,
+        },
+        baseURL: baseURL,
+        retryPolicy: &RetryPolicy{
+            MaxRetries:    3,
+            RetryInterval: 500 * time.Millisecond,
+            MaxBackoff:    5 * time.Second,
+            ShouldRetry: func(resp *http.Response, err error) bool {
+                return err != nil || (resp != nil && resp.StatusCode >= 500)
+            },
+        },
     }
     
-    // 应用配置选项
     for _, option := range options {
         option(client)
     }
@@ -38,248 +52,151 @@ func NewClient(baseURL string, options ...ClientOption) *Client {
     return client
 }
 
-// Get 发送GET请求
-func (c *Client) Get(ctx context.Context, path string, headers map[string]string) (*http.Response, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+path, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	// 添加请求头
-	for k, v := range headers {
-		req.Header.Set(k, v)
-	}
-
-	return c.httpClient.Do(req)
-}
-
-// Post 发送POST请求
-func (c *Client) Post(ctx context.Context, path string, body interface{}, headers map[string]string) (*http.Response, error) {
-	jsonBody, err := json.Marshal(body)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+path, strings.NewReader(string(jsonBody)))
-	if err != nil {
-		return nil, err
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	for k, v := range headers {
-		req.Header.Set(k, v)
-	}
-
-	return c.httpClient.Do(req)
-}
-
-// Put 发送PUT请求
-func (c *Client) Put(ctx context.Context, path string, body interface{}, headers map[string]string) (*http.Response, error) {
-	jsonBody, err := json.Marshal(body)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPut, c.baseURL+path, strings.NewReader(string(jsonBody)))
-	if err != nil {
-		return nil, err
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	for k, v := range headers {
-		req.Header.Set(k, v)
-	}
-
-	return c.httpClient.Do(req)
-}
-
-// Delete 发送DELETE请求
-func (c *Client) Delete(ctx context.Context, path string, body interface{}, headers map[string]string) (*http.Response, error) {
-	var bodyReader io.Reader
-
-	if body != nil {
-		jsonBody, err := json.Marshal(body)
-		if err != nil {
-			return nil, err
-		}
-		bodyReader = strings.NewReader(string(jsonBody))
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, c.baseURL+path, bodyReader)
-	if err != nil {
-		return nil, err
-	}
-
-	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
-	}
-
-	for k, v := range headers {
-		req.Header.Set(k, v)
-	}
-
-	return c.httpClient.Do(req)
-}
-
-// GetJSON 发送GET请求并解析JSON响应
-func (c *Client) GetJSON(ctx context.Context, path string, result interface{}) error {
-	resp, err := c.Get(ctx, path, nil)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return errors.New(errors.NetworkError, "HTTP请求失败: %d %s", resp.StatusCode, string(body))
-	}
-
-	return json.NewDecoder(resp.Body).Decode(result)
-}
-
-// PostJSON 发送POST请求并解析JSON响应到result
-func (c *Client) PostJSON(ctx context.Context, path string, body interface{}, result interface{}, headers map[string]string) error {
-    // 将请求体序列化为JSON
-    var reqBody io.Reader
+// 基础请求方法
+func (c *Client) request(ctx context.Context, method, path string, body interface{}, headers map[string]string) (*http.Response, error) {
+    var bodyReader io.Reader
+    
     if body != nil {
         jsonData, err := json.Marshal(body)
         if err != nil {
-            return fmt.Errorf("序列化JSON失败: %w", err)
+            return nil, fmt.Errorf("序列化请求体失败: %w", err)
         }
-        reqBody = bytes.NewBuffer(jsonData)
+        bodyReader = bytes.NewReader(jsonData)
     }
     
-    // 设置请求头
-    if headers == nil {
-        headers = make(map[string]string)
-    }
-    // 确保设置了 Content-Type
-    if _, exists := headers["Content-Type"]; !exists {
-        headers["Content-Type"] = "application/json"
-    }
-    
-    // 发送POST请求
-    resp, err := c.Post(ctx, path, reqBody, headers)
+    req, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, bodyReader)
     if err != nil {
-        return err
-    }
-    defer resp.Body.Close()
-    
-    // 检查响应状态码
-    if resp.StatusCode >= 400 {
-        return fmt.Errorf("HTTP错误: %d %s", resp.StatusCode, resp.Status)
+        return nil, err
     }
     
-    // 解析JSON响应到result
-    if result != nil {
-        if err := json.NewDecoder(resp.Body).Decode(result); err != nil {
-            return fmt.Errorf("解析响应失败: %w", err)
-        }
+    if body != nil {
+        req.Header.Set("Content-Type", "application/json")
     }
     
-    return nil
+    for k, v := range headers {
+        req.Header.Set(k, v)
+    }
+    
+    return c.doWithRetry(req)
 }
 
-// PutJSON 发送PUT请求并解析JSON响应
-func (c *Client) PutJSON(ctx context.Context, path string, body interface{}, result interface{}, headers map[string]string) error {
-	resp, err := c.Put(ctx, path, body, headers)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
-		bodyBytes, _ := io.ReadAll(resp.Body)
-		return errors.New(errors.NetworkError, "HTTP请求失败: %d %s", resp.StatusCode, string(bodyBytes))
-	}
-
-	return json.NewDecoder(resp.Body).Decode(result)
-}
-
-// DeleteJSON 发送DELETE请求并解析JSON响应
-func (c *Client) DeleteJSON(ctx context.Context, path string, body interface{}, result interface{}, headers map[string]string) error {
-	resp, err := c.Delete(ctx, path, body, headers)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		bodyBytes, _ := io.ReadAll(resp.Body)
-		return errors.New(errors.NetworkError, "HTTP请求失败: %d %s", resp.StatusCode, string(bodyBytes))
-	}
-
-	return json.NewDecoder(resp.Body).Decode(result)
-}
-
-// WithTimeout 设置客户端超时时间
-func WithTimeout(timeout time.Duration) ClientOption {
-	return func(c *Client) {
-		c.httpClient.Timeout = timeout
-	}
-}
-
-// WithRetryPolicy 设置重试策略
-func WithRetryPolicy(policy *RetryPolicy) ClientOption {
-	return func(c *Client) {
-		c.retryPolicy = policy
-	}
-}
-
-// DefaultRetryPolicy 返回默认的重试策略
-func DefaultRetryPolicy() *RetryPolicy {
-	return &RetryPolicy{
-		MaxRetries:    3,
-		RetryInterval: 500 * time.Millisecond,
-		MaxBackoff:    5 * time.Second,
-		ShouldRetry: func(resp *http.Response, err error) bool {
-			return err != nil || (resp != nil && resp.StatusCode >= 500)
-		},
-	}
-}
-
-// RetryPolicy 定义HTTP请求重试策略
-type RetryPolicy struct {
-	MaxRetries    int
-	RetryInterval time.Duration
-	MaxBackoff    time.Duration
-	ShouldRetry   func(*http.Response, error) bool
-}
-
-// DoWithRetry 发送HTTP请求并根据重试策略重试
-func (c *Client) DoWithRetry(req *http.Request) (*http.Response, error) {
+// 带重试的请求执行
+func (c *Client) doWithRetry(req *http.Request) (*http.Response, error) {
     var resp *http.Response
     var err error
-    var retryCount int
     
-    for retryCount = 0; retryCount <= c.retryPolicy.MaxRetries; retryCount++ {
-        // 如果不是第一次尝试，则等待
+    for retryCount := 0; retryCount <= c.retryPolicy.MaxRetries; retryCount++ {
         if retryCount > 0 {
-            // 计算退避时间，可以使用指数退避算法
             backoffTime := c.retryPolicy.RetryInterval * time.Duration(1<<uint(retryCount-1))
             if backoffTime > c.retryPolicy.MaxBackoff {
                 backoffTime = c.retryPolicy.MaxBackoff
             }
             time.Sleep(backoffTime)
             
-            // 创建新的请求体（如果原始请求有请求体）
+            // 为重试创建新的请求体
             if req.Body != nil {
-                // 这里假设请求体可以被重复读取
-                // 实际使用时可能需要克隆请求体
+                req.Body.Close()
+                if req.GetBody != nil {
+                    newBody, err := req.GetBody()
+                    if err != nil {
+                        return nil, err
+                    }
+                    req.Body = newBody
+                }
             }
         }
         
-        // 发送请求
         resp, err = c.httpClient.Do(req)
         
-        // 检查是否需要重试
         if !c.retryPolicy.ShouldRetry(resp, err) {
-            break
+            return resp, err
+        }
+        
+        if retryCount == c.retryPolicy.MaxRetries {
+            if resp != nil {
+                bodyBytes, _ := io.ReadAll(resp.Body)
+                resp.Body.Close()
+                return nil, fmt.Errorf("最大重试次数已达到: HTTP %d: %s", 
+                    resp.StatusCode, string(bodyBytes))
+            }
+            return nil, fmt.Errorf("最大重试次数已达到: %w", err)
+        }
+        
+        if resp != nil && resp.Body != nil {
+            resp.Body.Close()
         }
     }
     
     return resp, err
 }
 
-// ClientOption 定义客户端选项函数
-type ClientOption func(*Client)
+// DoJSON 执行HTTP请求并处理JSON响应
+func (c *Client) DoJSON(ctx context.Context, method, path string, reqBody, respBody interface{}, headers map[string]string) error {
+    resp, err := c.request(ctx, method, path, reqBody, headers)
+    if err != nil {
+        return err
+    }
+    defer resp.Body.Close()
+    
+    // 检查响应状态
+    if resp.StatusCode >= 400 {
+        bodyBytes, _ := io.ReadAll(resp.Body)
+        return fmt.Errorf("HTTP请求失败: %d %s", resp.StatusCode, string(bodyBytes))
+    }
+    
+    // 如果不需要解析响应体
+    if respBody == nil {
+        // 读取并丢弃响应体以允许连接复用
+        _, _ = io.Copy(io.Discard, resp.Body)
+        return nil
+    }
+    
+    // 解析JSON响应
+    if err := json.NewDecoder(resp.Body).Decode(respBody); err != nil {
+        return fmt.Errorf("解析响应失败: %w", err)
+    }
+    
+    return nil
+}
+
+// GetJSON 发送GET请求并解析JSON响应
+func (c *Client) GetJSON(ctx context.Context, path string, result interface{}) error {
+    return c.DoJSON(ctx, http.MethodGet, path, nil, result, nil)
+}
+
+// PostJSON 发送POST请求并解析JSON响应
+func (c *Client) PostJSON(ctx context.Context, path string, body, result interface{}) error {
+    return c.DoJSON(ctx, http.MethodPost, path, body, result, nil)
+}
+
+// PutJSON 发送PUT请求并解析JSON响应
+func (c *Client) PutJSON(ctx context.Context, path string, body, result interface{}) error {
+    return c.DoJSON(ctx, http.MethodPut, path, body, result, nil)
+}
+
+// DeleteJSON 发送DELETE请求并解析JSON响应
+func (c *Client) DeleteJSON(ctx context.Context, path string, result interface{}) error {
+    return c.DoJSON(ctx, http.MethodDelete, path, nil, result, nil)
+}
+
+// WithTimeout 设置客户端超时时间
+func WithClientTimeout(timeout time.Duration) ClientOption {
+    return func(c *Client) {
+        c.httpClient.Timeout = timeout
+    }
+}
+
+// WithRetryPolicy 设置重试策略
+func WithRetryPolicy(maxRetries int, retryInterval time.Duration) ClientOption {
+    return func(c *Client) {
+        c.retryPolicy.MaxRetries = maxRetries
+        c.retryPolicy.RetryInterval = retryInterval
+    }
+}
+
+// WithHTTPClient 设置自定义HTTP客户端
+func WithHTTPClient(httpClient *http.Client) ClientOption {
+    return func(c *Client) {
+        c.httpClient = httpClient
+    }
+}

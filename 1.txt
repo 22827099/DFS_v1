@@ -1,2 +1,69 @@
 go mod init github.com/22827099/DFS_v1
 ssh-keygen -t ed25519 -C "zjf274060@gmal.com"
+# Go 测试命令分析
+
+最后运行的命令是 `go test -v -run TestNetworkCommunication/CORSMiddlewareTest`，这个命令在 network 目录下运行，用于专门测试 `TestNetworkCommunication` 测试函数中的 `CORSMiddlewareTest` 子测试。
+
+## 执行结果
+
+测试结果显示 `CORSMiddlewareTest` 子测试**失败**了，包含两个失败的子测试：
+
+1. **PreflightRequest 测试失败**：
+   - 状态码不匹配：期望 200，实际 405
+   - 缺少 `Access-Control-Allow-Origin` 头：期望 "https://example.com"，实际为空
+   - 缺少 `Access-Control-Allow-Methods` 头：期望包含 "GET"，实际为空
+
+2. **ActualRequest 测试失败**：
+   - 缺少 `Access-Control-Allow-Origin` 头：期望 "https://example.com"，实际为空
+
+## 问题分析
+
+从您的 middleware.go 代码来看，问题在于 `CORSMiddleware` 函数实现中：
+
+1. 您的中间件检查请求的源是否在允许列表中，但**没有为空源设置默认值**
+2. 测试用例可能使用的是 "https://example.com" 作为源，但这个源可能不在中间件的允许列表中
+
+## 建议修复
+
+修改 `CORSMiddleware` 函数，确保它正确处理 "https://example.com" 源：
+
+```go
+func CORSMiddleware(allowedOrigins []string) Middleware {
+    return func(next http.Handler) http.Handler {
+        return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+            origin := r.Header.Get("Origin")
+            
+            // 检查是否是允许的来源
+            originAllowed := false
+            if origin != "" {
+                for _, allowedOrigin := range allowedOrigins {
+                    if origin == allowedOrigin || allowedOrigin == "*" {
+                        originAllowed = true
+                        w.Header().Set("Access-Control-Allow-Origin", origin)
+                        break
+                    }
+                }
+            }
+            
+            // 如果是预检请求(OPTIONS)
+            if r.Method == "OPTIONS" {
+                // 设置允许的方法
+                w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+                // 设置允许的头
+                w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+                // 设置缓存时间
+                w.Header().Set("Access-Control-Max-Age", "86400") // 24小时
+                
+                // 响应预检请求并结束
+                w.WriteHeader(http.StatusOK)
+                return
+            }
+            
+            // 继续处理非预检请求
+            next.ServeHTTP(w, r)
+        })
+    }
+}
+```
+
+要解决测试失败问题，请确保在测试中将 "https://example.com" 添加到允许的源列表中。

@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"errors"
 
 	"github.com/22827099/DFS_v1/common/logging"
 	metaconfig "github.com/22827099/DFS_v1/internal/metaserver/config"
@@ -29,6 +30,12 @@ type MetaCore struct {
 
 // NewMetaCore 创建核心组件管理器
 func NewMetaCore(cfg *metaconfig.Config, logger logging.Logger) (*MetaCore, error) {
+    logger.Info("NewMetaCore 被调用", "cfg", cfg, "nodeID", cfg.NodeID)
+    if cfg.NodeID == "" {
+        logger.Error("NodeID为空")
+        return nil, errors.New("节点ID不能为空")
+    }
+	
 	// 初始化数据库
 	db, err := database.NewManager(cfg.Database, logger)
 	if err != nil {

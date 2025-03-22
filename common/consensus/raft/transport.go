@@ -9,7 +9,7 @@ import (
 )
 
 // 简单的演示如何使用该库
-func ExampleUsage() {
+func ExampleUsage() {	
 	// 创建配置
 	config := DefaultConfig()
 	config.NodeID = 1

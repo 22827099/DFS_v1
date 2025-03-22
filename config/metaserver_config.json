@@ -1,20 +1,52 @@
 {
-    "server": {
-        "host": "localhost",
-        "port": 9000,
-        "threads": 4
-    },
-    "storage": {
-        "path": "./data/meta",
-        "maxSize": "10GB"
-    },
-    "consensus": {
-        "algorithm": "raft",
-        "electionTimeout": 1000,
-        "heartbeatInterval": 500
-    },
-    "logging": {
-        "level": "info",
-        "path": "./logs/metaserver.log"
-    }
+  "node": {
+    "id": "meta-1",
+    "role": "metaserver",
+    "data_dir": "./data/meta"
+  },
+  "server": {
+    "host": "0.0.0.0",
+    "port": 9000,
+    "read_timeout": "30s",
+    "write_timeout": "30s",
+    "enable_cors": true,
+    "allow_origins": ["*"]
+  },
+  "logging": {
+    "level": "info",
+    "console": true,
+    "file": "logs/metaserver.log"
+  },
+  "consensus": {
+    "protocol": "raft",
+    "data_dir": "./data/meta/raft",
+    "snapshot_threshold": 10000,
+    "compaction_interval": "24h"
+  },
+  "database": {
+    "type": "mysql",
+    "host": "localhost",
+    "port": 3306,
+    "user": "root",
+    "password": "password",
+    "database": "dfs_meta",
+    "max_open_conns": 50,
+    "max_idle_conns": 10
+  },
+  "cluster": {
+    "peers": ["localhost:9000", "localhost:9001", "localhost:9002"],
+    "election_timeout": "2s",
+    "heartbeat_timeout": "500ms",
+    "heartbeat_interval": "1s",
+    "suspect_timeout": "3s",
+    "dead_timeout": "10s",
+    "rebalance_eval_interval": "5m",
+    "imbalance_threshold": 20.0,
+    "max_concurrent_migrations": 5
+  },
+  "security": {
+    "enable_tls": false,
+    "enable_auth": true,
+    "token_expiry": "24h"
+  }
 }

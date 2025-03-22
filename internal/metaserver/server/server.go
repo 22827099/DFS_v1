@@ -12,12 +12,12 @@ import (
 	"github.com/22827099/DFS_v1/common/logging"
 	"github.com/22827099/DFS_v1/common/metrics"
 	nethttp "github.com/22827099/DFS_v1/common/network/http"
-	"github.com/22827099/DFS_v1/internal/metaserver/core"
 	metaconfig "github.com/22827099/DFS_v1/internal/metaserver/config"
+	"github.com/22827099/DFS_v1/internal/metaserver/core"
 	"github.com/22827099/DFS_v1/internal/metaserver/core/cluster"
 	"github.com/22827099/DFS_v1/internal/metaserver/core/metadata"
-	"github.com/22827099/DFS_v1/internal/metaserver/server/middleware"
 	"github.com/22827099/DFS_v1/internal/metaserver/server/api/v1"
+	"github.com/22827099/DFS_v1/internal/metaserver/server/middleware"
 )
 
 // MetadataServer 元数据服务器结构
@@ -44,24 +44,39 @@ func NewServer(cfg *config.SystemConfig, options ...ServerOption) (*MetadataServ
 		return nil, errors.New(errors.InvalidArgument, "配置不能为空")
 	}
 
+	if cfg.NodeID == "" {
+        return nil, errors.New(errors.InvalidArgument, "节点ID不能为空")
+    }
+
     // 初始化日志
     logger := logging.NewLogger()
     
     // 初始化 HTTP 服务器
-    httpServer := nethttp.NewServer(fmt.Sprintf("%s:%d", "localhost", 8080))
+	httpServer := nethttp.NewServer(fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port))
 
-	// // 初始化认证服务 TODO: #2 添加认证服务
+	// 初始化认证服务 TODO: #2 添加认证服务
 	// authService := middleware.Auth(/* 必要参数 */)
-
 	// // 初始化事务管理器 TODO: #3 添加事务管理器
 	// txManager := db.NewTransactionManager(/* 必要参数 */)
     
     // 转换为元数据服务器配置
     metaCfg := &metaconfig.Config{
+		//使用metaserver/config/config.go中的NodeID
+		NodeID: cfg.NodeID,
 		Database: metaconfig.DatabaseConfig{},
-		Cluster:  metaconfig.ClusterConfig{},
+		Cluster:  metaconfig.ClusterConfig{
+			NodeID: cfg.NodeID,
+			Peers: cfg.Cluster.Peers,
+            ElectionTimeout: cfg.Cluster.ElectionTimeout,
+            HeartbeatTimeout: cfg.Cluster.HeartbeatTimeout,
+		},
     }
-    
+    // 在创建元数据核心前
+	logger.Info("准备创建MetaCore", 
+	"nodeID", cfg.NodeID, 
+	"metaCfg.NodeID", metaCfg.NodeID)
+
+
     // 初始化元数据核心
     metaCore, err := core.NewMetaCore(metaCfg, logger)
     if err != nil {
@@ -98,9 +113,12 @@ func NewServer(cfg *config.SystemConfig, options ...ServerOption) (*MetadataServ
 		server.metaStore = metaStore
 	}
 
+	// 添加这一行
+	logger.Info("创建集群管理器", "clusterConfig", metaCfg.Cluster)
+
 	// 如果没有提供集群管理器，创建默认的
 	if server.cluster == nil {
-		clusterMgr, err := cluster.NewManager(cfg.Cluster, logger)
+		clusterMgr, err := cluster.NewManager(metaCfg.Cluster, logger)
 		if err != nil {
 			return nil, errors.Wrap(err, errors.Internal, "初始化集群管理器失败")
 		}

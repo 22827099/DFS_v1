@@ -1,354 +1,574 @@
-package raft
+package metaserver_test
 
 import (
-	"context"
-	"sync"
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"net/http"
 	"testing"
 	"time"
+	"math/rand"
 
-	"github.com/22827099/DFS_v1/common/consensus/raft"
-	"go.etcd.io/etcd/raft/v3/raftpb"
+	"github.com/22827099/DFS_v1/common/config"
+	metaconfig "github.com/22827099/DFS_v1/internal/metaserver/config"
+	"github.com/22827099/DFS_v1/internal/metaserver/server"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
-// TestTransport 实现测试用的Transport接口
-type TestTransport struct {
-	nodeID       uint64
-	peers        map[uint64]*TestTransport
-	receiveC     chan raftpb.Message
-	mu           sync.RWMutex
-	disconnected bool
-}
+var leaderURL string
 
-// NewTestTransport 创建测试用传输层
-func NewTestTransport(nodeID uint64) *TestTransport {
-	return &TestTransport{
-		nodeID:   nodeID,
-		peers:    make(map[uint64]*TestTransport),
-		receiveC: make(chan raftpb.Message, 1024),
-	}
-}
+// TestRaftConsensus 测试元数据服务器的Raft一致性算法
+func TestRaftConsensus(t *testing.T) {
 
-// Send 向其他节点发送消息
-func (t *TestTransport) Send(msgs []raftpb.Message) {
-	t.mu.RLock()
-	disconnected := t.disconnected
-	t.mu.RUnlock()
-
-	if disconnected {
-		return
+	if testing.Short() {
+		t.Skip("跳过耗时的Raft一致性算法测试")
 	}
 
-	for _, msg := range msgs {
-		t.mu.RLock()
-		peer, ok := t.peers[msg.To]
-		t.mu.RUnlock()
+	// 创建一个由3个节点组成的集群进行测试
+	clusterSize := 3
+	servers := make([]*server.MetadataServer, clusterSize)
+	configs := make([]*config.SystemConfig, clusterSize)
+	baseURLs := make([]string, clusterSize)
 
-		if ok {
-			select {
-			case peer.receiveC <- msg:
-			default:
-				// 如果通道满了，模拟网络丢包
+	// 基础端口号
+	basePort := 19200
+
+	// 准备所有节点的配置
+	for i := 0; i < clusterSize; i++ {
+		nodeID := fmt.Sprintf("%d", i+1)  // 替换 fmt.Sprintf("raft-node-%d", i)
+		
+		// 添加随机因素到选举超时
+		randomElectionTimeout := 2*time.Second + time.Duration(rand.Intn(1000))*time.Millisecond
+		
+		configs[i] = &config.SystemConfig{
+			NodeID: nodeID,
+			Server: config.ServerConfig{
+				Host: "localhost",
+				Port: basePort + i,
+			},
+			Cluster: metaconfig.ClusterConfig{
+				Peers: []string{"1", "2", "3"},  // 使用节点ID列表
+				PeerMap: map[string]string{
+					"1": fmt.Sprintf("localhost:%d", basePort),
+					"2": fmt.Sprintf("localhost:%d", basePort+1),
+					"3": fmt.Sprintf("localhost:%d", basePort+2),
+				},
+                PeerAddresses: []string{
+					fmt.Sprintf("localhost:%d", basePort),
+					fmt.Sprintf("localhost:%d", basePort+1),
+					fmt.Sprintf("localhost:%d", basePort+2),
+				},
+				ElectionTimeout:  randomElectionTimeout,
+				HeartbeatTimeout: 500 * time.Millisecond,
+                RebalanceEvaluationInterval: 30 * time.Second, 
+			},
+			Consensus: config.ConsensusConfig{
+				Protocol:           "raft",
+				DataDir:            fmt.Sprintf("./raft-test-data-%d", i),
+				SnapshotThreshold:  1000,
+				CompactionInterval: 10 * time.Minute,
+			},
+		}
+		baseURLs[i] = fmt.Sprintf("http://localhost:%d", basePort+i)
+	}
+
+	// 测试完成后清理所有服务器
+	defer func() {
+		for _, s := range servers {
+			if s != nil {
+				s.Stop()
 			}
 		}
-	}
-}
+	}()
 
-// Start 启动传输层
-func (t *TestTransport) Start() error {
-	return nil
-}
+	t.Run("LeaderElectionTest", func(t *testing.T) {
+        // 启动所有节点
+        for i := 0; i < clusterSize; i++ {
+            var err error
+            servers[i], err = server.NewServer(configs[i])
+            if err != nil {
+                t.Fatalf("创建服务器失败: %v", err)
+            }
+            require.NotNil(t, servers[i], "服务器实例不应为nil")
+            
+            err = servers[i].Start()
+            require.NoError(t, err)
+            time.Sleep(500 * time.Millisecond) // 错开启动时间
+        }
 
-// Stop 停止传输层
-func (t *TestTransport) Stop() {
-}
+		// 等待集群选出领导者
+		t.Log("等待集群选举领导者...")
+		time.Sleep(5 * time.Second)
 
-// AddPeer 添加一个对等节点
-func (t *TestTransport) AddPeer(id uint64, peer *TestTransport) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	t.peers[id] = peer
-}
+		// 检查是否有领导者被选举出来
+		var leaderCount int
+		var leaderID string
 
-// Disconnect 模拟节点断开连接
-func (t *TestTransport) Disconnect() {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	t.disconnected = true
-}
+		for i := 0; i < clusterSize; i++ {
+			resp, err := http.Get(baseURLs[i] + "/api/v1/cluster/leader")
+			require.NoError(t, err)
 
-// Reconnect 模拟节点重新连接
-func (t *TestTransport) Reconnect() {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	t.disconnected = false
-}
+			if resp.StatusCode == http.StatusOK {
+				var leaderInfo map[string]interface{}
+				err = json.NewDecoder(resp.Body).Decode(&leaderInfo)
+				require.NoError(t, err)
 
-// 测试集群
-type TestCluster struct {
-	nodes      map[uint64]*raft.RaftNode
-	transports map[uint64]*TestTransport
-}
+				// 如果该节点成功返回领导者信息，确认领导者一致
+				if nodeID, ok := leaderInfo["node_id"].(string); ok && nodeID != "" {
+					if leaderID == "" {
+						leaderID = nodeID
+						leaderURL = baseURLs[i]
+					} else if leaderID != nodeID {
+						t.Errorf("发现不一致的领导者: %s 和 %s", leaderID, nodeID)
+					}
+					leaderCount++
+				}
+			}
+			resp.Body.Close()
+		}
 
-// NewTestCluster 创建测试集群
-func NewTestCluster(t *testing.T, nodeCount int) *TestCluster {
-	tc := &TestCluster{
-		nodes:      make(map[uint64]*raft.RaftNode),
-		transports: make(map[uint64]*TestTransport),
-	}
+		assert.Equal(t, clusterSize, leaderCount, "所有节点都应该识别出相同的领导者")
+		assert.NotEmpty(t, leaderID, "集群应该选出一个领导者")
+		t.Logf("集群成功选出领导者: %s", leaderID)
 
-	// 构建节点ID列表
-	var peerIDs []uint64
-	for i := 1; i <= nodeCount; i++ {
-		peerIDs = append(peerIDs, uint64(i))
-	}
-
-	// 创建传输层
-	for _, id := range peerIDs {
-		tc.transports[id] = NewTestTransport(id)
-	}
-
-	// 添加对等连接
-	for _, srcID := range peerIDs {
-		for _, dstID := range peerIDs {
-			if srcID != dstID {
-				tc.transports[srcID].AddPeer(dstID, tc.transports[dstID])
+		// 测试领导者切换
+		// 首先找出领导者节点
+		var leaderIdx int
+		for i, cfg := range configs {
+			if cfg.NodeID == leaderID {
+				leaderIdx = i
+				break
 			}
 		}
-	}
 
-	// 创建节点
-	for _, id := range peerIDs {
-		config := raft.DefaultConfig()
-		config.NodeID = id
-		config.Peers = peerIDs
-		config.HeartbeatTick = 1
-		config.ElectionTick = 10
-		config.ApplyBufferSize = 100
-		config.SendBufferSize = 100
+		// 停止当前领导者
+		t.Logf("停止当前领导者节点: %s", configs[leaderIdx].NodeID)
+		err := servers[leaderIdx].Stop()
+		require.NoError(t, err)
+		servers[leaderIdx] = nil
 
-		node, err := raft.NewRaftNode(config, tc.transports[id])
-		if err != nil {
-			t.Fatalf("创建节点失败: %v", err)
+		// 等待新的选举完成
+		t.Log("等待新的领导者选举...")
+		time.Sleep(10 * time.Second)
+
+		// 验证集群选举出新领导者
+		var newLeaderID string
+		var newLeaderFound bool
+
+		for i := 0; i < clusterSize; i++ {
+			if i == leaderIdx || servers[i] == nil {
+				continue
+			}
+
+			resp, err := http.Get(baseURLs[i] + "/api/v1/cluster/leader")
+			if err != nil {
+				t.Logf("无法从节点 %d 获取领导者信息: %v", i, err)
+				continue
+			}
+
+			if resp.StatusCode == http.StatusOK {
+				var leaderInfo map[string]interface{}
+				err = json.NewDecoder(resp.Body).Decode(&leaderInfo)
+				if err != nil {
+					t.Logf("解析响应失败: %v", err)
+					resp.Body.Close()
+					continue
+				}
+
+				if nodeID, ok := leaderInfo["node_id"].(string); ok && nodeID != "" && nodeID != leaderID {
+					newLeaderID = nodeID
+					newLeaderFound = true
+					t.Logf("找到新领导者: %s", newLeaderID)
+				}
+			}
+			resp.Body.Close()
 		}
 
-		tc.nodes[id] = node
+		assert.True(t, newLeaderFound, "应该选举出新的领导者")
+		assert.NotEqual(t, leaderID, newLeaderID, "新领导者应该与之前的领导者不同")
+	})
 
-		// 启动接收协程
-		go tc.receiveLoop(id)
-	}
-
-	return tc
-}
-
-// 接收并处理消息
-func (tc *TestCluster) receiveLoop(nodeID uint64) {
-	transport := tc.transports[nodeID]
-	for msg := range transport.receiveC {
-		node := tc.nodes[nodeID]
-		// 调用公开的 Step 方法
-		node.Step(context.Background(), msg)
-	}
-}
-
-// Stop 停止集群
-func (tc *TestCluster) Stop() {
-	for _, node := range tc.nodes {
-		node.Stop()
-	}
-}
-
-// WaitForLeader 等待直到集群选出领导
-func (tc *TestCluster) WaitForLeader(timeout time.Duration) (uint64, bool) {
-	deadline := time.Now().Add(timeout)
-	for time.Now().Before(deadline) {
-		for id, node := range tc.nodes {
-			if node.IsLeader() {
-				return id, true
+	t.Run("LogReplicationTest", func(t *testing.T) {
+		// 清理之前的服务器
+		for i := 0; i < clusterSize; i++ {
+			if servers[i] != nil {
+				servers[i].Stop()
+				servers[i] = nil
 			}
 		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	return 0, false
-}
 
-// TestBasicElection 测试基本的领导者选举
-func TestBasicElection(t *testing.T) {
-	cluster := NewTestCluster(t, 3)
-	defer cluster.Stop()
+        // 重新启动所有节点
+        for i := 0; i < clusterSize; i++ {
+            var err error
+            servers[i], err = server.NewServer(configs[i])
+            if err != nil {
+                t.Fatalf("创建服务器失败: %v", err)
+            }
+            require.NotNil(t, servers[i], "服务器实例不应为nil")
+            
+            err = servers[i].Start()
+            require.NoError(t, err)
+            time.Sleep(500 * time.Millisecond)
+        }
 
-	// 等待领导者选举完成
-	leaderID, success := cluster.WaitForLeader(3 * time.Second)
-	if !success {
-		t.Fatal("领导者选举失败")
-	}
-	t.Logf("节点 %d 成为领导者", leaderID)
-}
+		// 等待集群选举领导者
+		time.Sleep(5 * time.Second)
 
-// TestLogReplication 测试日志复制
-func TestLogReplication(t *testing.T) {
-	cluster := NewTestCluster(t, 3)
-	defer cluster.Stop()
+		// 找出当前领导者
+		var leaderURL string
+		var leaderID string
 
-	// 等待领导者选举完成
-	leaderID, success := cluster.WaitForLeader(3 * time.Second)
-	if !success {
-		t.Fatal("领导者选举失败")
-	}
+		for i := 0; i < clusterSize; i++ {
+			resp, err := http.Get(baseURLs[i] + "/api/v1/cluster/leader")
+			require.NoError(t, err)
 
-	leader := cluster.nodes[leaderID]
+			if resp.StatusCode == http.StatusOK {
+				var leaderInfo map[string]interface{}
+				err = json.NewDecoder(resp.Body).Decode(&leaderInfo)
+				require.NoError(t, err)
+				resp.Body.Close()
 
-	// 提交一条日志
-	testData := []byte("test-command")
-	if !leader.Propose(testData) {
-		t.Fatal("提案失败")
-	}
-
-	// 等待日志应用
-	timeout := time.After(3 * time.Second)
-	var appliedCount int
-	// 用于收集各节点收到正确应用的命令
-	applied := make(map[uint64][]byte)
-	t.Logf("期望的命令: %s", testData)
-
-	// 只记录内容与 testData 长度一致且匹配的命令
-	for appliedCount < 3 {
-		select {
-		case <-timeout:
-			t.Fatalf("等待日志复制超时，仅有 %d 个节点应用了正确的命令", appliedCount)
-		default:
-			for id, node := range cluster.nodes {
-				// 如果该节点还未记录正确的命令，则尝试从 ApplyCh 中获取
-				if applied[id] == nil {
-					select {
-					case msg := <-node.ApplyCh():
-						// 只统计长度与预期相符的命令
-						if msg.CommandValid && len(msg.Command) == len(testData) && string(msg.Command) == string(testData) {
-							t.Logf("节点 %d 应用了命令: %q", id, string(msg.Command))
-							applied[id] = msg.Command
-							appliedCount++
-						} else {
-							// 忽略那些不符合预期的消息（例如配置变更产生的消息）
-							t.Logf("节点 %d 收到非预期命令: %q", id, msg.Command)
+				if nodeID, ok := leaderInfo["node_id"].(string); ok && nodeID != "" {
+					for j, cfg := range configs {
+						if cfg.NodeID == nodeID {
+							leaderURL = baseURLs[j]
+							leaderID = nodeID
+							t.Logf("当前领导者: %s, URL: %s", leaderID, leaderURL)
+							break
 						}
-					default:
-						// 无消息则继续
+					}
+					if leaderURL != "" {
+						break
 					}
 				}
+			} else {
+				resp.Body.Close()
 			}
-			time.Sleep(10 * time.Millisecond)
 		}
-	}
 
-	// 验证所有节点应用的是相同的命令
-	t.Logf("验证应用命令...")
-	for id, command := range applied {
-		if string(command) != string(testData) {
-			t.Errorf("节点 %d 应用了错误的命令: %q, 期望: %q", id, string(command), string(testData))
-		} else {
-			t.Logf("节点 %d 应用了正确的命令: %q", id, string(command))
+		require.NotEmpty(t, leaderURL, "应该找到领导者URL")
+
+		// 创建一些测试数据，通过领导者节点写入
+		testKey := "test-consensus-key"
+		testValue := map[string]interface{}{
+			"name":      "consensus-test-file",
+			"size":      1024,
+			"type":      "test-data",
+			"timestamp": time.Now().Unix(),
 		}
-	}
-}
 
-// TestFaultTolerance 测试容错性
-func TestFaultTolerance(t *testing.T) {
-	cluster := NewTestCluster(t, 5)
-	defer cluster.Stop()
+		reqBody, err := json.Marshal(testValue)
+		require.NoError(t, err)
 
-	// 等待领导者选举完成
-	leaderID, success := cluster.WaitForLeader(3 * time.Second)
-	if !success {
-		t.Fatal("领导者选举失败")
-	}
+		// 向领导者提交数据
+		resp, err := http.Post(
+			leaderURL+"/api/v1/kv/"+testKey,
+			"application/json",
+			bytes.NewReader(reqBody),
+		)
+		require.NoError(t, err)
+		defer resp.Body.Close()
 
-	// 模拟两个节点断开连接（少于半数）
-	var failedNodes []uint64
-	failCount := 0
-	for id := range cluster.nodes {
-		if id != leaderID && failCount < 2 {
-			cluster.transports[id].Disconnect()
-			failedNodes = append(failedNodes, id)
-			failCount++
-			t.Logf("断开节点 %d 连接", id)
-		}
-	}
+		assert.Equal(t, http.StatusOK, resp.StatusCode, "应该成功写入数据")
 
-	// 发送一个新提案
-	testData := []byte("fault-tolerance-test")
-	if !cluster.nodes[leaderID].Propose(testData) {
-		t.Fatal("提案失败")
-	}
+		// 等待数据复制到其他节点
+		time.Sleep(2 * time.Second)
 
-	// 等待提案被多数节点接受
-	time.Sleep(1 * time.Second)
+		// 验证每个节点都能读取到相同的数据
+		for i := 0; i < clusterSize; i++ {
+			resp, err := http.Get(baseURLs[i] + "/api/v1/kv/" + testKey)
+			require.NoError(t, err)
 
-	// 检查是否仍然有领导者
-	if !cluster.nodes[leaderID].IsLeader() {
-		t.Fatal("领导者状态丢失")
-	}
+			assert.Equal(t, http.StatusOK, resp.StatusCode, "节点 %d 应该能够读取数据", i)
 
-	// 重新连接故障节点
-	for _, id := range failedNodes {
-		cluster.transports[id].Reconnect()
-		t.Logf("重新连接节点 %d", id)
-	}
+			if resp.StatusCode == http.StatusOK {
+				var readValue map[string]interface{}
+				err = json.NewDecoder(resp.Body).Decode(&readValue)
+				require.NoError(t, err)
 
-	// 等待日志被所有节点同步
-	time.Sleep(2 * time.Second)
-
-	// 验证所有节点最终接收到相同的日志
-	applied := make(map[uint64][]byte)
-	timeout := time.After(5 * time.Second)
-	expectedNodes := len(cluster.nodes)
-	appliedCount := 0
-
-	// 等待所有节点应用日志
-	for appliedCount < expectedNodes {
-		select {
-		case <-timeout:
-			// 记录哪些节点未应用日志
-			var notApplied []uint64
-			for id := range cluster.nodes {
-				if applied[id] == nil {
-					notApplied = append(notApplied, id)
-				}
+				assert.Equal(t, testValue["name"], readValue["name"], "节点 %d 读取的数据不一致", i)
+				assert.Equal(t, testValue["size"], readValue["size"], "节点 %d 读取的数据不一致", i)
+				assert.Equal(t, testValue["type"], readValue["type"], "节点 %d 读取的数据不一致", i)
 			}
-			t.Fatalf("等待日志同步超时，以下节点未应用日志: %v", notApplied)
-		default:
-			for id, node := range cluster.nodes {
-				if applied[id] == nil {
-					select {
-					case msg := <-node.ApplyCh():
-						if msg.CommandValid {
-							applied[id] = msg.Command
-							appliedCount++
-							t.Logf("节点 %d 应用了命令", id)
+			resp.Body.Close()
+		}
+	})
+
+	t.Run("FaultToleranceTest", func(t *testing.T) {
+		// 清理之前的服务器
+		for i := 0; i < clusterSize; i++ {
+			if servers[i] != nil {
+				servers[i].Stop()
+				servers[i] = nil
+			}
+		}
+
+		// 重新启动所有节点
+		for i := 0; i < clusterSize; i++ {
+			var err error
+            servers[i], err = server.NewServer(configs[i])
+            if err != nil {
+                t.Fatalf("创建服务器失败: %v", err)
+            }
+            require.NotNil(t, servers[i], "服务器实例不应为nil")
+
+            err = servers[i].Start()
+            require.NoError(t, err)
+			time.Sleep(500 * time.Millisecond)
+		}
+
+		// 等待集群选举领导者
+		time.Sleep(5 * time.Second)
+
+		// 找出当前领导者
+		var leaderURL string
+		var leaderID string
+		var leaderIdx int
+
+		for i := 0; i < clusterSize; i++ {
+			resp, err := http.Get(baseURLs[i] + "/api/v1/cluster/leader")
+			require.NoError(t, err)
+
+			if resp.StatusCode == http.StatusOK {
+				var leaderInfo map[string]interface{}
+				err = json.NewDecoder(resp.Body).Decode(&leaderInfo)
+				require.NoError(t, err)
+				resp.Body.Close()
+
+				if nodeID, ok := leaderInfo["node_id"].(string); ok && nodeID != "" {
+					for j, cfg := range configs {
+						if cfg.NodeID == nodeID {
+							leaderURL = baseURLs[j]
+							leaderID = nodeID
+							leaderIdx = j
+							t.Logf("当前领导者: %s, URL: %s", leaderID, leaderURL)
+							break
 						}
-					default:
-						// 没有消息，继续检查其他节点
+					}
+					if leaderURL != "" {
+						break
 					}
 				}
+			} else {
+				resp.Body.Close()
 			}
-			time.Sleep(10 * time.Millisecond)
 		}
-	}
 
-	// 验证所有节点应用的是相同的命令
-	for id, command := range applied {
-		if string(command) != string(testData) {
-			t.Errorf("节点 %d 应用了错误的命令: %s, 期望: %s", id, command, testData)
+		require.NotEmpty(t, leaderURL, "应该找到领导者URL")
+
+		// 确定一个跟随者节点作为故障节点
+		var followerIdx int
+		for i := 0; i < clusterSize; i++ {
+			if i != leaderIdx {
+				followerIdx = i
+				break
+			}
 		}
-	}
 
-	// 特别验证之前断开的节点是否正确同步
-	for _, id := range failedNodes {
-		command := applied[id]
-		if string(command) != string(testData) {
-			t.Errorf("故障恢复节点 %d 应用了错误的命令: %s, 期望: %s", id, command, testData)
+		// 停止这个跟随者节点
+		t.Logf("停止跟随者节点: %s", configs[followerIdx].NodeID)
+		err := servers[followerIdx].Stop()
+		require.NoError(t, err)
+		servers[followerIdx] = nil
+
+		// 在只有2个节点的情况下继续写入数据
+		testKey := "fault-tolerance-key"
+		testValue := map[string]interface{}{
+			"name":      "fault-tolerance-test",
+			"size":      2048,
+			"type":      "test-data-fault",
+			"timestamp": time.Now().Unix(),
+		}
+
+		reqBody, err := json.Marshal(testValue)
+		require.NoError(t, err)
+
+		// 向领导者提交数据
+		resp, err := http.Post(
+			leaderURL+"/api/v1/kv/"+testKey,
+			"application/json",
+			bytes.NewReader(reqBody),
+		)
+		require.NoError(t, err)
+		defer resp.Body.Close()
+
+		assert.Equal(t, http.StatusOK, resp.StatusCode, "仍应该能够写入数据")
+
+		// 恢复故障节点
+		t.Logf("重启故障节点: %s", configs[followerIdx].NodeID)
+		servers[followerIdx], _ = server.NewServer(configs[followerIdx])
+		err = servers[followerIdx].Start()
+		require.NoError(t, err)
+
+		// 等待节点恢复并同步
+		time.Sleep(5 * time.Second)
+
+		// 检查恢复的节点是否同步了故障期间的数据
+		resp, err = http.Get(baseURLs[followerIdx] + "/api/v1/kv/" + testKey)
+		require.NoError(t, err)
+		defer resp.Body.Close()
+
+		if resp.StatusCode == http.StatusOK {
+			var syncedValue map[string]interface{}
+			err = json.NewDecoder(resp.Body).Decode(&syncedValue)
+			require.NoError(t, err)
+
+			assert.Equal(t, testValue["name"], syncedValue["name"], "恢复的节点应该同步故障期间写入的数据")
+			assert.Equal(t, testValue["size"], syncedValue["size"], "恢复的节点应该同步故障期间写入的数据")
+			assert.Equal(t, testValue["type"], syncedValue["type"], "恢复的节点应该同步故障期间写入的数据")
+
+			t.Log("恢复的节点成功同步了故障期间的数据")
 		} else {
-			t.Logf("故障恢复节点 %d 成功同步并应用了正确的命令", id)
+			t.Errorf("恢复的节点未能读取到故障期间写入的数据，状态码: %d", resp.StatusCode)
 		}
-	}
-}
+	})
 
-// 更多测试用例可以添加...
+	t.Run("ConfigurationChangeTest", func(t *testing.T) {
+		// 清理之前的服务器
+		for i := 0; i < clusterSize; i++ {
+			if servers[i] != nil {
+				servers[i].Stop()
+				servers[i] = nil
+			}
+		}
+
+		// 创建一个初始只有2个节点的集群
+		initialClusterSize := 2
+		for i := 0; i < initialClusterSize; i++ {
+			// 修改配置，初始只包含2个节点
+            configs[i].Cluster.Peers = []string{"1", "2"}
+
+			var err error
+            servers[i], err = server.NewServer(configs[i])
+            if err != nil {
+                t.Fatalf("创建服务器失败: %v", err)
+            }
+            require.NotNil(t, servers[i], "服务器实例不应为nil")
+			err = servers[i].Start()
+			require.NoError(t, err)
+			time.Sleep(500 * time.Millisecond)
+		}
+
+		// 等待集群选举领导者
+		time.Sleep(5 * time.Second)
+
+		// 找出当前领导者
+		var leaderURL string
+
+		for i := 0; i < initialClusterSize; i++ {
+			resp, err := http.Get(baseURLs[i] + "/api/v1/cluster/leader")
+			require.NoError(t, err)
+
+			if resp.StatusCode == http.StatusOK {
+				var leaderInfo map[string]interface{}
+				err = json.NewDecoder(resp.Body).Decode(&leaderInfo)
+				require.NoError(t, err)
+				resp.Body.Close()
+
+				if nodeID, ok := leaderInfo["node_id"].(string); ok && nodeID != "" {
+					for j := 0; j < initialClusterSize; j++ {
+						if configs[j].NodeID == nodeID {
+							leaderURL = baseURLs[j]
+							t.Logf("当前领导者: %s, URL: %s", nodeID, leaderURL)
+							break
+						}
+					}
+					if leaderURL != "" {
+						break
+					}
+				}
+			} else {
+				resp.Body.Close()
+			}
+		}
+
+		require.NotEmpty(t, leaderURL, "应该找到领导者URL")
+
+		// 准备添加第三个节点
+		newNodeConfig := map[string]interface{}{
+			"node_id": configs[2].NodeID,
+			"address": fmt.Sprintf("localhost:%d", basePort+2),
+		}
+
+		reqBody, err := json.Marshal(newNodeConfig)
+		require.NoError(t, err)
+
+		// 通过API添加新节点到集群
+		t.Logf("添加新节点: %s 到集群", configs[2].NodeID)
+		resp, err := http.Post(
+			leaderURL+"/api/v1/cluster/nodes",
+			"application/json",
+			bytes.NewReader(reqBody),
+		)
+		require.NoError(t, err)
+		defer resp.Body.Close()
+
+		assert.Equal(t, http.StatusOK, resp.StatusCode, "应该成功添加新节点")
+
+		// 启动新的节点
+		configs[2].Cluster.Peers = []string{"1", "2", "3"}
+
+		servers[2], _ = server.NewServer(configs[2])
+		err = servers[2].Start()
+		require.NoError(t, err)
+
+		// 等待节点加入集群
+		time.Sleep(5 * time.Second)
+
+		// 检查集群节点状态
+		resp, err = http.Get(leaderURL + "/api/v1/cluster/nodes")
+		require.NoError(t, err)
+		defer resp.Body.Close()
+
+		var clusterNodes map[string]interface{}
+		err = json.NewDecoder(resp.Body).Decode(&clusterNodes)
+		require.NoError(t, err)
+
+		nodesList, ok := clusterNodes["nodes"].([]interface{})
+		require.True(t, ok)
+		assert.Equal(t, 3, len(nodesList), "集群应该有3个节点")
+
+		// 向集群写入一些数据，验证新节点是否参与一致性协议
+		testKey := "config-change-key"
+		testValue := map[string]interface{}{
+			"name":      "config-change-test",
+			"size":      4096,
+			"type":      "test-data-config",
+			"timestamp": time.Now().Unix(),
+		}
+
+		reqBody, err = json.Marshal(testValue)
+		require.NoError(t, err)
+
+		// 向领导者提交数据
+		resp, err = http.Post(
+			leaderURL+"/api/v1/kv/"+testKey,
+			"application/json",
+			bytes.NewReader(reqBody),
+		)
+		require.NoError(t, err)
+		resp.Body.Close()
+
+		// 验证所有节点（包括新加入的）都能读取数据
+		time.Sleep(2 * time.Second)
+
+		resp, err = http.Get(baseURLs[2] + "/api/v1/kv/" + testKey)
+		require.NoError(t, err)
+		defer resp.Body.Close()
+
+		assert.Equal(t, http.StatusOK, resp.StatusCode, "新节点应该能够读取数据")
+
+		if resp.StatusCode == http.StatusOK {
+			var readValue map[string]interface{}
+			err = json.NewDecoder(resp.Body).Decode(&readValue)
+			require.NoError(t, err)
+
+			assert.Equal(t, testValue["name"], readValue["name"], "新节点读取的数据应一致")
+			assert.Equal(t, testValue["size"], readValue["size"], "新节点读取的数据应一致")
+			assert.Equal(t, testValue["type"], readValue["type"], "新节点读取的数据应一致")
+
+			t.Log("新节点成功参与了一致性协议")
+		}
+	})
+}

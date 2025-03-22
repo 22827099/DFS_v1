@@ -9,6 +9,7 @@
   - 加权得分策略：综合考虑CPU、内存、磁盘、网络因素
   - 容量均衡策略：主要考虑存储空间分布
   - 访问频率均衡策略：考虑数据访问热度
+  - 复合策略：组合多种策略的优势
 - 热点识别和处理
   - 访问频率统计
   - 自适应阈值检测
@@ -25,6 +26,26 @@
 2. MetricCollector - 节点指标收集器
 3. BalanceStrategy - 负载均衡策略接口及实现
 4. Migrator - 数据迁移执行器
+
+## 负载均衡策略
+
+系统支持多种负载均衡策略：
+
+1. **WeightedScoreStrategy** - 加权得分策略
+   - 综合考虑CPU、内存、磁盘和分片数量
+   - 适合一般场景的综合平衡
+
+2. **CapacityBalanceStrategy** - 容量均衡策略
+   - 主要关注磁盘使用率
+   - 适合存储空间不平衡的场景
+
+3. **AccessFrequencyStrategy** - 访问频率均衡策略
+   - 关注热点数据和访问负载
+   - 适合访问模式不均匀的场景
+
+4. **CompositeStrategy** - 复合策略
+   - 组合多种策略的优势
+   - 可配置权重，灵活适应不同场景
 
 ## 使用方式
 
@@ -45,4 +66,15 @@ manager.TriggerRebalance()
 
 // 获取负载均衡状态
 status := manager.GetStatus()
+
+// 创建自定义策略
+strategy := rebalance.NewWeightedScoreStrategy(0.4, 0.2, 0.2, 0.2)
+
+// 创建复合策略
+strategies := []rebalance.BalanceStrategy{
+    rebalance.NewWeightedScoreStrategy(0.4, 0.2, 0.2, 0.2),
+    rebalance.NewCapacityBalanceStrategy(15.0),
+}
+weights := []float64{0.7, 0.3}
+compositeStrategy := rebalance.NewCompositeStrategy(strategies, weights)
 ```

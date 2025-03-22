@@ -7,7 +7,7 @@ import (
 
 	"github.com/22827099/DFS_v1/common/logging"
 	httplib "github.com/22827099/DFS_v1/common/network/http"
-	"github.com/22827099/DFS_v1/internal/types"
+	"github.com/22827099/DFS_v1/common/types"
 	"github.com/22827099/DFS_v1/internal/metaserver/config"
 )
 
@@ -162,7 +162,7 @@ func (m *Manager) sendHeartbeats() {
 			m.mu.RLock()
 			for nodeID := range m.nodeStates {
 				// 跳过自己
-				if nodeID == m.cfg.NodeID {
+				if nodeID == m.cfg.NodeID.String() {
 					continue
 				}
 				go m.sendHeartbeatToNode(nodeID)
@@ -188,7 +188,7 @@ func (m *Manager) sendHeartbeatToNode(nodeID string) {
     
     // 准备心跳数据
     heartbeatData := map[string]string{
-        "sender_id": m.cfg.NodeID,
+        "sender_id": m.cfg.NodeID.String(),
         "timestamp": time.Now().Format(time.RFC3339),
     }
     
@@ -225,7 +225,7 @@ func (m *Manager) checkHeartbeats() {
 
 			for nodeID, state := range m.nodeStates {
 				// 跳过自己
-				if nodeID == m.cfg.NodeID {
+				if nodeID == m.cfg.NodeID.String() {
 					continue
 				}
 

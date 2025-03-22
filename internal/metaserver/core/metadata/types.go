@@ -3,74 +3,51 @@ package metadata
 import (
 	"context"
 	"time"
+
+	"github.com/22827099/DFS_v1/common/types"
 )
 
-// FileType 定义文件类型
-type FileType string
-
-const (
-	TypeRegular   FileType = "regular"   // 普通文件
-	TypeDirectory FileType = "directory" // 目录
-	TypeSymlink   FileType = "symlink"   // 符号链接
-)
-
-// FileInfo 文件元数据信息
+// FileInfo 文件元数据信息 - 使用通用基本类型
 type FileInfo struct {
-	Name        string            `json:"name"`              // 文件名称
-	Path        string            `json:"path"`              // 文件路径
-	Type        FileType          `json:"type"`              // 文件类型
-	Size        int64             `json:"size"`              // 文件大小
-	MimeType    string            `json:"mime_type,omitempty"` // 文件MIME类型
-	ChunkSize   int               `json:"chunk_size"`        // 块大小
-	Chunks      []ChunkInfo       `json:"chunks"`            // 块信息列表
-	Owner       string            `json:"owner"`             // 所有者
-	Permissions string            `json:"permissions"`       // 权限 (例如 "rw-r--r--")
-	Replicas    int               `json:"replicas"`          // 副本数
-	CreatedAt   time.Time         `json:"created_at"`        // 创建时间
-	ModifiedAt  time.Time         `json:"modified_at"`       // 修改时间
-	UpdatedAt   time.Time         `json:"updated_at"`        // 更新时间
-	Metadata    map[string]string `json:"metadata,omitempty"` // 用户自定义元数据
+	types.BasicFileInfo                // 嵌入基本文件信息
+	Type                types.FileType `json:"type"`
+	Size                int64          `json:"size"`
+	MimeType            string         `json:"mime_type,omitempty"`
+	ChunkSize           int            `json:"chunk_size"`
+	Chunks              []ChunkInfo    `json:"chunks"`
+	Replicas            int            `json:"replicas"`
 }
 
-// ChunkInfo 块信息
+// ChunkInfo 块信息 - 使用通用基本类型
 type ChunkInfo struct {
-	Index      int      `json:"index"`               // 块索引
-	Size       int64    `json:"size"`                // 块大小
-	Offset     int64    `json:"offset"`              // 块在文件中的偏移量
-	Checksum   string   `json:"checksum"`            // 块校验和
-	Status     string   `json:"status,omitempty"`    // 块状态
-	NodeID     string   `json:"node_id,omitempty"`   // 主节点ID
-	Locations  []string `json:"locations"`           // 数据节点位置
-	Replicas   []string `json:"replicas,omitempty"`  // 副本节点ID列表
+	types.BasicChunkInfo                   // 嵌入基本块信息
+	Status               types.ChunkStatus `json:"status,omitempty"`
+	NodeID               types.NodeID      `json:"node_id,omitempty"`
+	Locations            []string          `json:"locations"`
+	Replicas             []types.NodeID    `json:"replicas,omitempty"`
 }
 
-// DirectoryInfo 目录元数据
+// DirectoryInfo 目录元数据 - 使用通用基本类型
 type DirectoryInfo struct {
-	Name        string            `json:"name"`              // 目录名称
-	Path        string            `json:"path"`              // 目录路径
-	Owner       string            `json:"owner"`             // 所有者
-	Permissions string            `json:"permissions"`       // 权限
-	CreatedAt   time.Time         `json:"created_at"`        // 创建时间
-	ModifiedAt  time.Time         `json:"modified_at"`       // 修改时间
-	UpdatedAt   time.Time         `json:"updated_at"`        // 更新时间
-	Metadata    map[string]string `json:"metadata,omitempty"` // 用户自定义元数据
+	types.BasicFileInfo // 嵌入基本文件信息
+	// 目录特有字段...
 }
 
-// DirectoryEntry 目录项，表示目录下的文件或子目录
+// DirectoryEntry 目录项 - 使用通用类型
 type DirectoryEntry struct {
-	Name        string    `json:"name"`               // 条目名称
-	Path        string    `json:"path"`               // 完整路径
-	Type        FileType  `json:"type"`               // 类型 (文件或目录)
-	IsDir       bool      `json:"is_dir"`             // 是否是目录
-	Size        int64     `json:"size"`               // 文件大小 (如果是文件)
-	MimeType    string    `json:"mime_type,omitempty"`   // 仅对文件有效
-	ChildCount  int       `json:"child_count,omitempty"` // 仅对目录有效
-	CreatedAt   time.Time `json:"created_at"`         // 创建时间
-	ModifiedAt  time.Time `json:"modified_at"`        // 修改时间
-	UpdatedAt   time.Time `json:"updated_at"`         // 更新时间
+	Name       string         `json:"name"`
+	Path       string         `json:"path"`
+	Type       types.FileType `json:"type"`
+	IsDir      bool           `json:"is_dir"`
+	Size       int64          `json:"size"`
+	MimeType   string         `json:"mime_type,omitempty"`
+	ChildCount int            `json:"child_count,omitempty"`
+	CreatedAt  time.Time      `json:"created_at"`
+	ModifiedAt time.Time      `json:"modified_at"`
+	UpdatedAt  time.Time      `json:"updated_at"`
 }
 
-// Store 定义元数据存储接口
+// Store 接口保持不变
 type Store interface {
 	// 初始化存储
 	Initialize() error

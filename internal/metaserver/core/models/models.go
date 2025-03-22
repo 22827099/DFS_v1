@@ -20,6 +20,7 @@ type FileMetadata struct {
 	CreateTime time.Time `db:"create_time"` // 创建时间
 	ModifyTime time.Time `db:"modify_time"` // 修改时间
 	AccessTime time.Time `db:"access_time"` // 访问时间
+
 }
 
 // DirectoryMetadata 表示目录的元数据
@@ -34,6 +35,7 @@ type DirectoryMetadata struct {
 	CreateTime time.Time `db:"create_time"` // 创建时间
 	ModifyTime time.Time `db:"modify_time"` // 修改时间
 	AccessTime time.Time `db:"access_time"` // 访问时间
+	
 }
 
 // ChunkMetadata 表示数据块元数据

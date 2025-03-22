@@ -7,7 +7,7 @@ import (
 
 	"github.com/22827099/DFS_v1/common/logging"
     metaconfig "github.com/22827099/DFS_v1/internal/metaserver/config"
-    "github.com/22827099/DFS_v1/internal/types"
+    "github.com/22827099/DFS_v1/common/types"
 )
 
 // Manager 负载均衡管理器
@@ -29,6 +29,12 @@ type Manager struct {
 
 // NewManager 创建负载均衡管理器
 func NewManager(cfg *metaconfig.LoadBalancerConfig, logger logging.Logger) (*Manager, error) {
+    // 检查评估间隔
+    if cfg.EvaluationInterval <= 0 {
+        cfg.EvaluationInterval = 30 * time.Second
+        logger.Warn("负载均衡评估间隔设置无效，已设置为默认值30秒")
+    }
+    
     if cfg == nil {
         cfg = &metaconfig.LoadBalancerConfig{
             EvaluationInterval:      5 * time.Minute,
@@ -143,7 +149,15 @@ func (m *Manager) GetNodeMetrics(nodeID string) *types.NodeMetrics {
 
 // 运行评估循环
 func (m *Manager) runEvaluationLoop() {
-    ticker := time.NewTicker(m.cfg.EvaluationInterval)
+    // 添加保护代码，确保间隔值有效
+    interval := m.cfg.EvaluationInterval
+    if interval <= 0 {
+        // 使用默认值
+        interval = 30 * time.Second
+        m.logger.Warn("负载均衡评估间隔无效，使用默认值30秒")
+    }
+    
+    ticker := time.NewTicker(interval)
     defer ticker.Stop()
     
     for {

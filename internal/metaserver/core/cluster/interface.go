@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/22827099/DFS_v1/internal/types"
+	"github.com/22827099/DFS_v1/common/types"
 )
 
 // Manager 定义集群管理的基本接口

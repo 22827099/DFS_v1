@@ -95,6 +95,11 @@ func NewZapLogger(config *LogConfig) Logger {
         // 默认输出到控制台
         output = zapcore.AddSync(os.Stdout)
     }
+    
+    // Ensure the buffer is used for output in tests
+    if config.Output != nil {
+        output = zapcore.AddSync(config.Output)
+    }
 
     // 创建核心
     core := zapcore.NewCore(encoder, output, level)

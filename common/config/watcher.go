@@ -68,8 +68,27 @@ func (cw *ConfigWatcher) Stop() {
 
 // ForceReload 强制重新加载配置
 func (cw *ConfigWatcher) ForceReload() error {
-    // 实现强制重新加载配置的逻辑
-    return cw.checkAndReload() // 或类似的内部方法
+	// 修复无限递归调用的问题
+	info, err := os.Stat(cw.configFile)
+	if err != nil {
+		return fmt.Errorf("配置文件状态检查失败: %w", err)
+	}
+
+	// 加载新配置
+	newConfig, err := LoadSystemConfig(cw.configFile)
+	if err != nil {
+		return fmt.Errorf("配置重载失败: %w", err)
+	}
+
+	// 更新最后修改时间
+	cw.lastMod = info.ModTime()
+
+	// 回调通知
+	if cw.callback != nil {
+		cw.callback(newConfig)
+	}
+
+	return nil
 }
 
 // checkAndReload 检查配置文件是否变化并重新加载

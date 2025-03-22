@@ -5,7 +5,6 @@ import (
 	"database/sql"
 
 	"github.com/22827099/DFS_v1/internal/metaserver/core/models"
-
 )
 
 // Repository 定义了通用的数据访问接口
@@ -13,6 +12,8 @@ type Repository interface {
 	// 基础查询方法
 	FindOne(ctx context.Context, dest interface{}, query string, args ...interface{}) error
 	Find(ctx context.Context, dest interface{}, query string, args ...interface{}) error
+	// 扩展查询方法 - 用于支持测试
+	FindAll(ctx context.Context, dest interface{}, query string, args ...interface{}) error
 
 	// 特定ID查询
 	FindByID(ctx context.Context, id int64, dest interface{}) error

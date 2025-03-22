@@ -3,10 +3,9 @@ package config
 import (
 	"errors"
 	"fmt"
-	"os"
 	"reflect"
 
-	"github.com/go-playground/validator/v10"
+	"github.com/22827099/DFS_v1/common/config/internal/reflection"
 )
 
 // Validator 配置验证器接口
@@ -61,67 +60,24 @@ func (v *DefaultValidator) Validate(config interface{}) error {
 			continue
 		}
 
-		fieldValue := val.Field(i).Interface()
+		fieldVal := val.Field(i)  // 保存为 reflect.Value
 
 		// 检查必填字段
-		if rule.Required {
-			if isZero(fieldValue) {
+		if rule.Required {	
+			if reflection.IsZeroValue(val.Field(i)) {
 				return fmt.Errorf("字段 %s 为必填项", fieldName)
 			}
 		}
 
 		// 应用自定义验证规则
 		if rule.Validator != nil {
-			if err := rule.Validator(fieldValue); err != nil {
+			if err := rule.Validator(fieldVal.Interface()); err != nil {
 				return fmt.Errorf("字段 %s 验证失败: %w", fieldName, err)
 			}
 		}
 	}
 
 	return nil
-}
-
-// isZero 检查值是否为零值
-func isZero(v interface{}) bool {
-	return reflect.DeepEqual(v, reflect.Zero(reflect.TypeOf(v)).Interface())
-}
-
-// ValidateConfig 增强的配置验证
-func ValidateConfig(config *SystemConfig) error {
-	validate := validator.New()
-
-	// 注册自定义验证函数
-	validate.RegisterValidation("path_exists", validatePathExists)
-
-	// 执行验证
-	if err := validate.Struct(config); err != nil {
-		return fmt.Errorf("配置校验失败: %v", err)
-	}
-
-	// 在config包的ValidateConfig函数中添加
-	if config.NodeID == "" {
-		return fmt.Errorf("节点ID不能为空")
-	}
-
-	// 执行自定义业务规则验证
-	if config.ChunkSize < 512 {
-		return fmt.Errorf("块大小不能小于512字节")
-	}
-
-	if config.Replicas < 1 {
-		return fmt.Errorf("副本数不能小于1")
-	}
-
-	return nil
-}
-
-// validatePathExists 验证路径是否存在
-func validatePathExists(fl validator.FieldLevel) bool {
-	path := fl.Field().String()
-	if _, err := os.Stat(path); err == nil {
-		return true
-	}
-	return false
 }
 
 // configEquals 比较两个配置是否相等
